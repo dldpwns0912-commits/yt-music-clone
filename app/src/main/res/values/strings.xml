@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">YouTube Music</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="skip_next">Skip Next</string>
+    <string name="skip_previous">Skip Previous</string>
+    <string name="offline_mode">Offline Mode</string>
+    <string name="offline_mode_desc">Toggle offline playback of downloaded tracks</string>
+</resources>

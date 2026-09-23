@@ -17,3 +17,7 @@ local.properties
 .gemini/
 .cache/
 .local/
+.bashrc
+.bash_history
+.profile
+.wget-hsts

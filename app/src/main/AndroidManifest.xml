@@ -51,7 +51,7 @@
         <service
             android:name=".core.system.OfflineModeTileService"
             android:exported="true"
-            android:icon="@android:drawable/ic_lock_airplane_mode"
+            android:icon="@drawable/ic_offline_tile"
             android:label="YT Offline"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>

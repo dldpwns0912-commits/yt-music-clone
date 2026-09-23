@@ -136,7 +136,7 @@ class YtDlpExtractor @Inject constructor(
             // Only pick formats with audio
             if (url.isEmpty() || acodec == "none") continue
 
-            val itag = format.optInt("format_id", "0").toIntOrNull() ?: format.optInt("itag", 0)
+            val itag = format.optString("format_id").toIntOrNull() ?: format.optInt("itag", 0)
             val ext = format.optString("ext", "m4a")
             val mimeType = "audio/$ext; codecs=\"$acodec\""
             val abr = format.optDouble("abr", 0.0).toInt() * 1000

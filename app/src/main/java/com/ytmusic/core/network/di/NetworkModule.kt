@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
-@InstallIn(SingletonComponent)
+@InstallIn(SingletonComponent::class)
 object NetworkModule {
 
     @Provides

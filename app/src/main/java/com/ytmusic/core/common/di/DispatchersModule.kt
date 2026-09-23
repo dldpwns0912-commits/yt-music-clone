@@ -22,7 +22,7 @@ annotation class DefaultDispatcher
 annotation class MainDispatcher
 
 @Module
-@InstallIn(SingletonComponent)
+@InstallIn(SingletonComponent::class)
 object DispatchersModule {
 
     @Provides

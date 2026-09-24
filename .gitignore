@@ -21,3 +21,4 @@ local.properties
 .bash_history
 .profile
 .wget-hsts
+.android/

@@ -70,6 +70,15 @@ class MusicPlaybackService : MediaLibraryService() {
         registerReceiver(becomingNoisyReceiver, filter)
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "action_play_pause" -> playerManager.togglePlayPause()
+            "action_next" -> playerManager.skipToNext()
+            "action_prev" -> playerManager.skipToPrevious()
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
         return mediaLibrarySession
     }

@@ -32,6 +32,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import androidx.glance.appwidget.updateAll
+import com.ytmusic.core.system.OfflineModeTileService
+import com.ytmusic.feature.widget.MusicGlanceWidget
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -75,6 +78,7 @@ class MusicPlayerManager @Inject constructor(
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playbackState.update { it.copy(isPlaying = isPlaying) }
+                syncWidgetState(_playbackState.value.currentTrack, isPlaying)
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -99,6 +103,7 @@ class MusicPlayerManager @Inject constructor(
                         _playbackState.update { it.copy(isPlaying = false, isLoading = false) }
                         recordPlaybackHistory(completed = true)
                         handleTrackEnded()
+                        syncWidgetState(_playbackState.value.currentTrack, false)
                     }
                     Player.STATE_IDLE -> {
                         _playbackState.update { it.copy(isLoading = false) }
@@ -128,6 +133,9 @@ class MusicPlayerManager @Inject constructor(
                         bufferedPositionMs = 0L
                     )
                 }
+
+                // Sync with home screen Glance widget
+                syncWidgetState(track, exoPlayer.isPlaying)
 
                 // Volume Normalization via LoudnessEnhancer
                 if (mediaId != null) {
@@ -289,6 +297,11 @@ class MusicPlayerManager @Inject constructor(
             if (file.exists()) {
                 return buildMediaItem(track, Uri.fromFile(file), loudnessDb = 0.0)
             }
+        }
+
+        // Check Quick Settings Offline Mode
+        if (OfflineModeTileService.isOfflineModeEnabled(context)) {
+            throw IllegalStateException("Offline Mode is active. Streaming track '${track.title}' is blocked.")
         }
 
         // 2. Extract playable streaming URL via yt-dlp / InnerTube extractor
@@ -487,5 +500,18 @@ class MusicPlayerManager @Inject constructor(
         crossfadeManager.cancel()
         audioEffectsManager.release()
         exoPlayer.release()
+    }
+
+    private fun syncWidgetState(track: TrackMetadata?, isPlaying: Boolean) {
+        val title = track?.title ?: "YouTube Music"
+        val artist = track?.artist ?: "Tap to open player"
+        MusicGlanceWidget.updateWidgetState(context, title, artist, isPlaying)
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                MusicGlanceWidget().updateAll(context)
+            } catch (e: Exception) {
+                Log.w(tag, "Failed to update Glance widget: ${e.message}")
+            }
+        }
     }
 }

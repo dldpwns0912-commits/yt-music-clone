@@ -50,14 +50,8 @@ class MediaNotificationManager @Inject constructor(
 
     @OptIn(UnstableApi::class)
     fun createNotificationProvider(): MediaNotification.Provider {
-        return object : DefaultMediaNotificationProvider(context) {
-            override fun getChannelId(): String {
-                return NOTIFICATION_CHANNEL_ID
-            }
-
-            override fun getChannelName(): Int {
-                return android.R.string.ok
-            }
-        }
+        return DefaultMediaNotificationProvider.Builder(context)
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .build()
     }
 }

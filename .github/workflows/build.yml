@@ -5,6 +5,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,3 +34,12 @@ jobs:
       with:
         name: yt-music-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    - name: Create or Update GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create v1.0.0 app/build/outputs/apk/debug/app-debug.apk \
+          --title "YouTube Music Clone v1.0.0 (Direct APK)" \
+          --notes "Download app-debug.apk directly to your Android smartphone and install." \
+          --clobber || true

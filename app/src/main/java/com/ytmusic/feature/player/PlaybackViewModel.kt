@@ -178,6 +178,10 @@ class PlaybackViewModel @Inject constructor(
         _isLyricsSheetVisible.value = visible
     }
 
+    fun setLyricsVisible(visible: Boolean) {
+        setLyricsSheetVisible(visible)
+    }
+
     fun reorderQueue(fromIndex: Int, toIndex: Int) {
         playerManager.moveQueueItem(fromIndex, toIndex)
     }

@@ -6,7 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService.LibraryParams
-import androidx.media3.session.MediaLibrarySession
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
@@ -53,8 +53,7 @@ class MusicLibrarySessionCallback @Inject constructor(
         params: LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
         val rootExtras = Bundle().apply {
-            putBoolean(LibraryParams.EXTRA_RECENT, true)
-            putBoolean(LibraryParams.EXTRA_OFFLINE, true)
+            putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
         }
 
         val rootMediaItem = MediaItem.Builder()
@@ -121,8 +120,8 @@ class MusicLibrarySessionCallback @Inject constructor(
     override fun onAddMediaItems(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
-        mediaItems: MutableList<MediaItem>
-    ): ListenableFuture<MutableList<MediaItem>> {
+        mediaItems: List<MediaItem>
+    ): ListenableFuture<List<MediaItem>> {
         return scope.future {
             val resolvedList = mutableListOf<MediaItem>()
             val tracks = mutableListOf<TrackMetadata>()
@@ -167,7 +166,7 @@ class MusicLibrarySessionCallback @Inject constructor(
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
         }
-        return super.onCustomCommand(session, controller, customCommand, args)
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
     }
 
     // Helper functions for Android Auto / MediaBrowser category trees
@@ -190,6 +189,11 @@ class MusicLibrarySessionCallback @Inject constructor(
         return tracks.map { it.toPlayableMediaItem() }
     }
 
+    private suspend fun getMostPlayedItems(): List<MediaItem> {
+        val tracks = historyDao.observeMostPlayedTracks(30).first()
+        return tracks.map { it.toPlayableMediaItem() }
+    }
+
     private suspend fun getPlaylistFolders(): List<MediaItem> {
         val playlists = playlistDao.observeAllPlaylists().first()
         return playlists.map { playlist ->
@@ -198,11 +202,10 @@ class MusicLibrarySessionCallback @Inject constructor(
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(playlist.name)
-                        .setSubtitle("${playlist.trackCount} tracks")
+                        .setSubtitle(playlist.description ?: "Playlist")
                         .setIsPlayable(false)
                         .setIsBrowsable(true)
                         .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
-                        .setArtworkUri(playlist.thumbnailUrl?.let { Uri.parse(it) })
                         .build()
                 )
                 .build()

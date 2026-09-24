@@ -68,7 +68,20 @@ fun MainScreen(
                     SearchScreen()
                 }
                 composable(Screen.Library.route) {
-                    LibraryScreen()
+                    LibraryScreen(
+                        onNavigateToEqualizer = { navController.navigate(Screen.Equalizer.route) },
+                        onNavigateToStorage = { navController.navigate(Screen.StorageManager.route) }
+                    )
+                }
+                composable(Screen.Equalizer.route) {
+                    com.ytmusic.feature.equalizer.EqualizerScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.StorageManager.route) {
+                    com.ytmusic.feature.storage.StorageManagerScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
                 }
             }
 

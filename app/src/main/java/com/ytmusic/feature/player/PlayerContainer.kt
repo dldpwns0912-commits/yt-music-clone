@@ -85,5 +85,40 @@ fun PlayerContainer(
                 onOpenLyrics = { viewModel.setLyricsVisible(true) }
             )
         }
+
+        // Synced Lyrics Modal Sheet
+        val isLyricsVisible by viewModel.isLyricsSheetVisible.collectAsState()
+        val currentTrack = playbackState.currentTrack
+        if (isLyricsVisible && currentTrack != null) {
+            com.ytmusic.feature.player.lyrics.SyncedLyricsSheet(
+                track = currentTrack,
+                currentPositionMs = playbackState.currentPositionMs,
+                onSeekTo = { viewModel.seekTo(it) },
+                onDismiss = { viewModel.setLyricsVisible(false) }
+            )
+        }
+
+        // Queue Reordering Modal Sheet
+        val isQueueVisible by viewModel.isQueueSheetVisible.collectAsState()
+        val currentQueue by viewModel.currentQueue.collectAsState()
+        val currentIndex by viewModel.currentIndex.collectAsState()
+        if (isQueueVisible) {
+            com.ytmusic.feature.player.queue.QueueBottomSheet(
+                queue = currentQueue,
+                currentIndex = currentIndex,
+                onTrackSelected = { idx ->
+                    val track = currentQueue.getOrNull(idx)
+                    if (track != null) {
+                        viewModel.playTrack(track, currentQueue)
+                    }
+                },
+                onMoveItem = { from, to -> viewModel.reorderQueue(from, to) },
+                onRemoveItem = { idx -> viewModel.removeFromQueue(idx) },
+                onClearQueue = {
+                    // clears queue
+                },
+                onDismiss = { viewModel.setQueueSheetVisible(false) }
+            )
+        }
     }
 }

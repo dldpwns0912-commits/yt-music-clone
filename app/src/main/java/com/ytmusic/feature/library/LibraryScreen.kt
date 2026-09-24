@@ -65,7 +65,7 @@ fun LibraryScreen(
         modifier = modifier
             .fillMaxSize()
             .background(YtBlack),
-        contentPadding = PaddingValues(horizontal = 16.dp, top = 20.dp, bottom = 140.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 1. Header
@@ -221,7 +221,7 @@ fun LibraryScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(text = playlist.name, color = YtTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text(text = "${playlist.trackCount} tracks", color = YtTextSecondary, fontSize = 12.sp)
+                        Text(text = playlist.description ?: "Playlist", color = YtTextSecondary, fontSize = 12.sp)
                     }
                 }
             }

@@ -41,11 +41,12 @@ object MediaModule {
     ): ExoPlayer {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                30_000,  // minBufferMs
-                60_000,  // maxBufferMs
-                1_500,   // bufferForPlaybackMs
-                3_000    // bufferForPlaybackAfterRebufferMs
+                60_000,  // minBufferMs (buffer at least 60 seconds)
+                120_000, // maxBufferMs (buffer up to 2 minutes)
+                2_500,   // bufferForPlaybackMs
+                5_000    // bufferForPlaybackAfterRebufferMs
             )
+            .setBackBuffer(30_000, true) // Retain 30s of back buffer for instantaneous rewind
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 

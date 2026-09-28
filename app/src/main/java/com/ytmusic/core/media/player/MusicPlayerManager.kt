@@ -36,7 +36,13 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.glance.appwidget.updateAll
 import com.ytmusic.core.system.OfflineModeTileService
-import com.ytmusic.feature.widget.MusicGlanceWidget
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,6 +76,7 @@ class MusicPlayerManager @Inject constructor(
     private var progressTrackingJob: Job? = null
     private var currentTrackPlayDurationMs = 0L
     private var hasRecordedHistoryForCurrentTrack = false
+    private var playbackRetryCount = 0
 
     init {
         setupPlayer()
@@ -89,6 +96,7 @@ class MusicPlayerManager @Inject constructor(
                         _playbackState.update { it.copy(isLoading = true) }
                     }
                     Player.STATE_READY -> {
+                        playbackRetryCount = 0 // Reset retry count upon successfully reaching READY state
                         _playbackState.update {
                             it.copy(
                                 isLoading = false,
@@ -150,8 +158,29 @@ class MusicPlayerManager @Inject constructor(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e(tag, "ExoPlayer error: ${error.errorCodeName} - ${error.message}", error)
-                _playbackState.update { it.copy(isLoading = false, isPlaying = false) }
+                Log.e(tag, "ExoPlayer error: ${error.errorCodeName} (${error.errorCode}) - ${error.message}", error)
+                val currentTrack = _playbackState.value.currentTrack
+                if (currentTrack != null && playbackRetryCount < 3) {
+                    playbackRetryCount++
+                    val resumePosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+                    Log.w(tag, "Attempting playback auto-recovery (attempt $playbackRetryCount) for ${currentTrack.id} at $resumePosition ms")
+                    _playbackState.update { it.copy(isLoading = true) }
+                    coroutineScope.launch {
+                        try {
+                            delay(600L * playbackRetryCount)
+                            val freshItem = resolveMediaItem(currentTrack, forceRefresh = true)
+                            exoPlayer.setMediaItem(freshItem, resumePosition)
+                            exoPlayer.prepare()
+                            exoPlayer.volume = 1.0f
+                            exoPlayer.play()
+                        } catch (e: Exception) {
+                            Log.e(tag, "Auto-recovery failed: ${e.message}")
+                            _playbackState.update { it.copy(isLoading = false, isPlaying = false) }
+                        }
+                    }
+                } else {
+                    _playbackState.update { it.copy(isLoading = false, isPlaying = false) }
+                }
             }
         })
     }
@@ -229,6 +258,7 @@ class MusicPlayerManager @Inject constructor(
         if (exoPlayer.playbackState == Player.STATE_ENDED) {
             exoPlayer.seekTo(0)
         }
+        exoPlayer.volume = 1.0f
         exoPlayer.play()
     }
 
@@ -299,17 +329,38 @@ class MusicPlayerManager @Inject constructor(
         }
     }
 
+    private suspend fun loadArtworkBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {
+        if (url.isBlank()) return@withContext null
+        try {
+            val loader = ImageLoader(context)
+            val request = ImageRequest.Builder(context)
+                .data(url)
+                .allowHardware(false)
+                .size(512, 512)
+                .build()
+            val result = (loader.execute(request) as? SuccessResult)?.drawable as? BitmapDrawable
+            val bitmap = result?.bitmap ?: return@withContext null
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            stream.toByteArray()
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to load artwork bytes for $url: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Resolves a playable MediaItem. Checks for local downloaded files first;
      * otherwise, extracts stream URL using YoutubeStreamExtractor and caches loudness info.
      */
-    suspend fun resolveMediaItem(track: TrackMetadata): MediaItem {
+    suspend fun resolveMediaItem(track: TrackMetadata, forceRefresh: Boolean = false): MediaItem {
         // 1. Check local download in Room DB
         val localTrack = trackDao.getTrackById(track.id)
         if (localTrack?.isDownloaded == true && !localTrack.localFilePath.isNullOrEmpty()) {
             val file = File(localTrack.localFilePath)
             if (file.exists() && file.length() > 1024L) {
-                return buildMediaItem(track, Uri.fromFile(file), loudnessDb = 0.0, mimeType = localTrack.mimeType)
+                val artworkBytes = loadArtworkBytes(track.thumbnailUrl)
+                return buildMediaItem(track, Uri.fromFile(file), loudnessDb = 0.0, mimeType = localTrack.mimeType, artworkBytes = artworkBytes)
             }
         }
 
@@ -319,11 +370,19 @@ class MusicPlayerManager @Inject constructor(
         }
 
         // 2. Extract playable streaming URL via yt-dlp / InnerTube extractor
-        val extraction = extractor.extractStream(track.id)
+        val extraction = extractor.extractStream(track.id, forceRefresh = forceRefresh)
+        
+        // Prioritize direct progressive audio streams (WebM Opus / M4A AAC).
+        // Progressive streams provide exact static duration, byte-range scrubbing support,
+        // and do not suffer from HLS segment timeouts / live manifest expiration!
+        val directStream = extraction.selectDownloadStream(AudioQuality.HIGH)
+            ?: extraction.selectBestStream(AudioQuality.HIGH)
+
         val hlsStream = extraction.audioStreams.find {
             it.mimeType.contains("mpegURL", ignoreCase = true) || it.url.contains("m3u8", ignoreCase = true)
         }
-        val bestStream = hlsStream ?: extraction.selectBestStream(AudioQuality.HIGH)
+
+        val bestStream = directStream ?: hlsStream
             ?: throw IllegalStateException("No audio streams available for ${track.id}")
 
         bestStream.loudnessDb?.let { trackLoudnessCache[track.id] = it }
@@ -342,23 +401,39 @@ class MusicPlayerManager @Inject constructor(
             )
         )
 
-        return buildMediaItem(track, Uri.parse(bestStream.url), bestStream.loudnessDb, bestStream.mimeType)
+        val artworkBytes = loadArtworkBytes(track.thumbnailUrl)
+        return buildMediaItem(track, Uri.parse(bestStream.url), bestStream.loudnessDb, bestStream.mimeType, artworkBytes)
     }
 
-    private fun buildMediaItem(track: TrackMetadata, uri: Uri, loudnessDb: Double?, mimeType: String? = null): MediaItem {
+    private fun buildMediaItem(
+        track: TrackMetadata,
+        uri: Uri,
+        loudnessDb: Double?,
+        mimeType: String? = null,
+        artworkBytes: ByteArray? = null
+    ): MediaItem {
         val extras = Bundle().apply {
             putDouble("loudnessDb", loudnessDb ?: 0.0)
             putString("artistId", track.artistId)
             putString("albumId", track.albumId)
         }
 
-        val metadata = MediaMetadata.Builder()
+        val metadataBuilder = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
-            .setAlbumTitle(track.album)
-            .setArtworkUri(if (track.thumbnailUrl.isNotBlank()) Uri.parse(track.thumbnailUrl) else null)
+            .setAlbumTitle(track.album ?: "Music")
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setExtras(extras)
-            .build()
+
+        if (track.thumbnailUrl.isNotBlank()) {
+            metadataBuilder.setArtworkUri(Uri.parse(track.thumbnailUrl))
+        }
+        if (artworkBytes != null && artworkBytes.isNotEmpty()) {
+            metadataBuilder.setArtworkData(artworkBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+        }
+
+        val metadata = metadataBuilder.build()
 
         val builder = MediaItem.Builder()
             .setMediaId(track.id)

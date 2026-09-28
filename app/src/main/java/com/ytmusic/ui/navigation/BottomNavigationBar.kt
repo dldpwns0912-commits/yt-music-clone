@@ -63,8 +63,8 @@ fun BottomNavigationBar(
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
+                    selectedIconColor = Color(0xFF06B6D4),
+                    selectedTextColor = Color(0xFF06B6D4),
                     unselectedIconColor = YtTextTertiary,
                     unselectedTextColor = YtTextTertiary,
                     indicatorColor = Color.Transparent

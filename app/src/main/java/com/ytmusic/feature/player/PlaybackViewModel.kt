@@ -3,12 +3,14 @@ package com.ytmusic.feature.player
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.PlaybackParameters
 import com.ytmusic.core.database.dao.PlaylistDao
 import com.ytmusic.core.database.dao.TrackDao
 import com.ytmusic.core.database.entity.PlaylistTrackCrossRef
 import com.ytmusic.core.database.entity.TrackEntity
 import com.ytmusic.core.designsystem.palette.ExtractedPalette
 import com.ytmusic.core.designsystem.palette.PaletteExtractor
+import com.ytmusic.core.downloader.AudioDownloadManager
 import com.ytmusic.core.extractor.model.TrackMetadata
 import com.ytmusic.core.media.model.PlaybackState
 import com.ytmusic.core.media.player.MusicPlayerManager
@@ -32,9 +34,11 @@ class PlaybackViewModel @Inject constructor(
     private val playerManager: MusicPlayerManager,
     private val paletteExtractor: PaletteExtractor,
     private val trackDao: TrackDao,
-    private val playlistDao: PlaylistDao
+    private val playlistDao: PlaylistDao,
+    private val downloadManager: AudioDownloadManager
 ) : ViewModel() {
 
+    val exoPlayer = playerManager.exoPlayer
     val playbackState: StateFlow<PlaybackState> = playerManager.playbackState
     val currentQueue: StateFlow<List<TrackMetadata>> = playerManager.currentQueue
     val currentIndex: StateFlow<Int> = playerManager.currentIndex
@@ -45,54 +49,23 @@ class PlaybackViewModel @Inject constructor(
     private val _isFullPlayerExpanded = MutableStateFlow(false)
     val isFullPlayerExpanded: StateFlow<Boolean> = _isFullPlayerExpanded.asStateFlow()
 
-    private val _isQueueSheetVisible = MutableStateFlow(false)
-    val isQueueSheetVisible: StateFlow<Boolean> = _isQueueSheetVisible.asStateFlow()
-
-    private val _isLyricsSheetVisible = MutableStateFlow(false)
-    val isLyricsSheetVisible: StateFlow<Boolean> = _isLyricsSheetVisible.asStateFlow()
-
     private val _isFavorite = MutableStateFlow(false)
     val isFavorite: StateFlow<Boolean> = _isFavorite.asStateFlow()
 
+    private val _downloadToast = MutableStateFlow<String?>(null)
+    val downloadToast: StateFlow<String?> = _downloadToast.asStateFlow()
+
     init {
-        // Observe current track changes to dynamically extract ambient glow palette
         viewModelScope.launch {
             playbackState
                 .map { it.currentTrack?.thumbnailUrl }
                 .distinctUntilChanged()
-                .collect { thumbnailUrl ->
-                    if (!thumbnailUrl.isNullOrBlank()) {
-                        val extracted = paletteExtractor.extractColorsFromUrl(context, thumbnailUrl)
-                        _palette.value = extracted
-                    } else {
-                        _palette.value = ExtractedPalette()
+                .collect { url ->
+                    if (!url.isNullOrBlank()) {
+                        val pal = paletteExtractor.extractPalette(context, url)
+                        _palette.value = pal
                     }
                 }
-        }
-
-        // Check if current track is in Favorites playlist
-        viewModelScope.launch {
-            playbackState
-                .map { it.currentTrack?.id }
-                .distinctUntilChanged()
-                .collect { trackId ->
-                    if (trackId != null) {
-                        checkFavoriteStatus(trackId)
-                    } else {
-                        _isFavorite.value = false
-                    }
-                }
-        }
-    }
-
-    private fun checkFavoriteStatus(trackId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val favoritesPlaylist = playlistDao.getPlaylistById("favorites")
-            if (favoritesPlaylist != null) {
-                // Determine if trackId is in favorites
-                val playlistWithTracks = playlistDao.getPlaylistById("favorites")
-                // Checked via cross reference or simple dao check
-            }
         }
     }
 
@@ -104,10 +77,6 @@ class PlaybackViewModel @Inject constructor(
         playerManager.togglePlayPause()
     }
 
-    fun seekTo(positionMs: Long) {
-        playerManager.seekTo(positionMs)
-    }
-
     fun skipToNext() {
         playerManager.skipToNext()
     }
@@ -116,77 +85,30 @@ class PlaybackViewModel @Inject constructor(
         playerManager.skipToPrevious()
     }
 
+    fun seekTo(positionMs: Long) {
+        playerManager.seekTo(positionMs)
+    }
+
     fun setPlaybackSpeed(speed: Float) {
         playerManager.setPlaybackSpeed(speed)
     }
 
-    fun toggleRepeatMode() {
-        val nextMode = when (playbackState.value.repeatMode) {
-            0 -> 2 // OFF -> ALL
-            2 -> 1 // ALL -> ONE
-            else -> 0 // ONE -> OFF
-        }
-        playerManager.setRepeatMode(nextMode)
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float) {
+        playerManager.setPlaybackSpeed(speed)
+        playerManager.exoPlayer.playbackParameters = PlaybackParameters(speed, pitch)
     }
 
-    fun toggleShuffleMode() {
-        playerManager.setShuffleMode(!playbackState.value.shuffleModeEnabled)
-    }
-
-    fun toggleVolumeNormalization() {
-        playerManager.setVolumeNormalization(!playbackState.value.volumeNormalizationEnabled)
-    }
-
-    fun toggleFavorite() {
+    fun downloadCurrentTrack() {
         val currentTrack = playbackState.value.currentTrack ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            val newFav = !_isFavorite.value
-            _isFavorite.value = newFav
-            if (newFav) {
-                trackDao.upsertTrack(
-                    TrackEntity(
-                        id = currentTrack.id,
-                        title = currentTrack.title,
-                        artist = currentTrack.artist,
-                        album = currentTrack.album,
-                        durationMs = currentTrack.durationMs,
-                        thumbnailUrl = currentTrack.thumbnailUrl
-                    )
-                )
-                playlistDao.insertCrossRef(
-                    PlaylistTrackCrossRef(
-                        playlistId = "favorites",
-                        trackId = currentTrack.id,
-                        position = 0
-                    )
-                )
-            } else {
-                playlistDao.removeTrackFromPlaylist("favorites", currentTrack.id)
-            }
-        }
+        downloadManager.enqueueDownload(currentTrack)
+        _downloadToast.value = "'${currentTrack.title}' 다운로드를 시작합니다"
+    }
+
+    fun clearDownloadToast() {
+        _downloadToast.value = null
     }
 
     fun setFullPlayerExpanded(expanded: Boolean) {
         _isFullPlayerExpanded.value = expanded
-    }
-
-    fun setQueueSheetVisible(visible: Boolean) {
-        _isQueueSheetVisible.value = visible
-    }
-
-    fun setLyricsSheetVisible(visible: Boolean) {
-        _isLyricsSheetVisible.value = visible
-    }
-
-    fun setLyricsVisible(visible: Boolean) {
-        setLyricsSheetVisible(visible)
-    }
-
-    fun reorderQueue(fromIndex: Int, toIndex: Int) {
-        playerManager.moveQueueItem(fromIndex, toIndex)
-    }
-
-    fun removeFromQueue(index: Int) {
-        playerManager.removeFromQueue(index)
     }
 }

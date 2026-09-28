@@ -70,7 +70,9 @@ class AudioDownloadWorker @AssistedInject constructor(
         createNotificationChannel()
         val notificationId = NOTIFICATION_ID_BASE + (trackId.hashCode() and 0x7FFFFFFF % 10000)
 
-        setForeground(createForegroundInfo(notificationId, title, artist, 0, false))
+        try {
+            setForeground(createForegroundInfo(notificationId, title, artist, 0, false))
+        } catch (_: Exception) {}
 
         try {
             // 1. Resolve AudioQuality

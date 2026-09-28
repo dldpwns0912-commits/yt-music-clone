@@ -27,75 +27,51 @@ class InnerTubeClient @Inject constructor(
 ) {
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     
-    data class SessionConfig(val visitorData: String?, val apiKey: String?)
-
     @Volatile
-    private var cachedSessionConfig: SessionConfig? = null
+    private var cachedVisitorData: String? = null
 
-    private suspend fun getSessionConfig(videoId: String): SessionConfig = withContext(Dispatchers.IO) {
-        cachedSessionConfig?.let {
-            if (!it.visitorData.isNullOrBlank() && !it.apiKey.isNullOrBlank()) {
-                return@withContext it
-            }
-        }
+    private suspend fun getVisitorData(): String = withContext(Dispatchers.IO) {
+        cachedVisitorData?.let { return@withContext it }
 
         try {
             val req = Request.Builder()
-                .url("https://www.youtube.com/watch?v=$videoId")
+                .url("https://www.youtube.com/sw.js_data")
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                .header("Accept-Language", "en-US,en;q=0.9")
                 .build()
 
             val resp = okHttpClient.newCall(req).execute()
-            val html = resp.body?.string() ?: ""
-
-            val pattern = Pattern.compile("ytcfg\\.set\\s*\\(\\s*(\\{.+?\\})\\s*\\)\\s*;")
-            val matcher = pattern.matcher(html)
+            val body = resp.body?.string() ?: ""
+            val matcher = Pattern.compile("\"(Cgt[^\"]+)\"").matcher(body)
             if (matcher.find()) {
-                val jsonStr = matcher.group(1)
-                val json = JSONObject(jsonStr)
-                val visitorData = json.optString("VISITOR_DATA", "")
-                val apiKey = json.optString("INNERTUBE_API_KEY", "")
-                if (visitorData.isNotBlank()) {
-                    val config = SessionConfig(visitorData, apiKey)
-                    cachedSessionConfig = config
-                    return@withContext config
-                }
+                val raw = matcher.group(1)
+                val decoded = URLDecoder.decode(raw, StandardCharsets.UTF_8.name())
+                cachedVisitorData = decoded
+                return@withContext decoded
             }
         } catch (_: Exception) {}
 
-        SessionConfig(
-            visitorData = "CgtHWTE1MG1DamRBMCjN8OjVBjIKCgJLUhIEGgAgOWLfAgrcAjIyLllUPXVKZVhTTzJVakl3MTI3bTVOZVlVRk9QQ2d4T3Fvc0JFWXBXbF8zaG8xTU1CUDRfSkhyN3YwMjV0Rm96WmZtVktfMEtwVEJyTDg3aGNqREtCa2N5dXBkTFFKTjAzaUZBTjZMeVh5emFfcG1vd2tDT3JnckNaanE3SkVZMVV6MExCVzFkS3hkQUc0alJKM1dFaVBDNmlOVURiNFJwRGVoMFZFZkRTX0ZENWUwUUdHOXVqWVdBbjMwSEY3LWpGaWVMd1Z0R3lzVHpoR1N0WmVtT1c4OGhGcTM1S0FoaGtwUmZXdm02S3p1SGNZLWx5b2lscGh0djZ4eFlvRFJnZ0JEeWY1cmFERFRaRmJDQ2xFQ0hORlpGM3pnX2lCMDY2dzd2QkdsVEthQW9rUGRBaERheHJNd2Z0eEZjT0ZUTkV2RVRrWEFPVlZnTF9GaDVfTlNQT3pEYlFEUQ==",
-            apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-        )
+        val fallback = "CgtHWTE1MG1DamRBMCjN8OjVBjIKCgJLUhIEGgAgOWLfAgrcAjIyLllUPXVKZVhTTzJVakl3MTI3bTVOZVlVRk9QQ2d4T3Fvc0JFWXBXbF8zaG8xTU1CUDRfSkhyN3YwMjV0Rm96WmZtVktfMEtwVEJyTDg3aGNqREtCa2N5dXBkTFFKTjAzaUZBTjZMeVh5emFfcG1vd2tDT3JnckNaanE3SkVZMVV6MExCVzFkS3hkQUc0alJKM1dFaVBDNmlOVURiNFJwRGVoMFZFZkRTX0ZENWUwUUdHOXVqWVdBbjMwSEY3LWpGaWVMd1Z0R3lzVHpoR1N0WmVtT1c4OGhGcTM1S0FoaGtwUmZXdm02S3p1SGNZLWx5b2lscGh0djZ4eFlvRFJnZ0JEeWY1cmFERFRaRmJDQ2xFQ0hORlpGM3pnX2lCMDY2dzd2QkdsVEthQW9rUGRBaERheHJNd2Z0eEZjT0ZUTkV2RVRrWEFPVlZnTF9GaDVfTlNQT3pEYlFEUQ=="
+        cachedVisitorData = fallback
+        return@withContext fallback
     }
 
     suspend fun getStreamInfo(
         videoId: String,
         clientType: InnerTubeClientType = InnerTubeClientType.VISIONOS
     ): ExtractionResult = withContext(Dispatchers.IO) {
-        val sessionConfig = getSessionConfig(videoId)
-        val payload = buildPlayerPayload(videoId, clientType, sessionConfig.visitorData)
+        val visitorData = getVisitorData()
+        val payload = buildPlayerPayload(videoId, clientType, visitorData)
         val requestBody = payload.toString().toRequestBody(jsonMediaType)
 
-        val endpoint = if (!sessionConfig.apiKey.isNullOrBlank()) {
-            "https://www.youtube.com/youtubei/v1/player?key=${sessionConfig.apiKey}&prettyPrint=false"
-        } else {
-            "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
-        }
-
         val requestBuilder = Request.Builder()
-            .url(endpoint)
+            .url("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
             .post(requestBody)
             .header("User-Agent", clientType.userAgent)
             .header("Content-Type", "application/json")
             .header("X-YouTube-Client-Name", clientType.clientNumber)
             .header("X-YouTube-Client-Version", clientType.clientVersion)
             .header("Origin", "https://www.youtube.com")
-
-        sessionConfig.visitorData?.let {
-            requestBuilder.header("X-Goog-Visitor-Id", it)
-        }
+            .header("X-Goog-Visitor-Id", visitorData)
 
         clientType.referer?.let { referer ->
             requestBuilder.header("Referer", referer)

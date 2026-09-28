@@ -26,6 +26,13 @@ class YTMusicApplication : Application(), Configuration.Provider, ImageLoaderFac
             .setWorkerFactory(workerFactory)
             .build()
 
+    override fun onCreate() {
+        super.onCreate()
+        try {
+            androidx.work.WorkManager.initialize(this, workManagerConfiguration)
+        } catch (_: Exception) {}
+    }
+
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .okHttpClient(okHttpClient)

@@ -100,8 +100,16 @@ class PlaybackViewModel @Inject constructor(
 
     fun downloadCurrentTrack() {
         val currentTrack = playbackState.value.currentTrack ?: return
-        downloadManager.enqueueDownload(currentTrack)
-        _downloadToast.value = "'${currentTrack.title}' 다운로드를 시작합니다"
+        try {
+            val enqueued = downloadManager.enqueueDownload(currentTrack)
+            if (enqueued) {
+                _downloadToast.value = "'${currentTrack.title}' 다운로드를 시작합니다"
+            } else {
+                _downloadToast.value = "다운로드 대기열 추가 실패"
+            }
+        } catch (e: Exception) {
+            _downloadToast.value = "다운로드 오류: ${e.message}"
+        }
     }
 
     fun clearDownloadToast() {

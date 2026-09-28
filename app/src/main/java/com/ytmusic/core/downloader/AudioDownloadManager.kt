@@ -31,35 +31,40 @@ class AudioDownloadManager @Inject constructor(
     private val trackDao: TrackDao,
     private val storageManager: StorageManager
 ) {
-    private val workManager = WorkManager.getInstance(context)
+    private val workManager by lazy { WorkManager.getInstance(context) }
 
-    fun enqueueDownload(track: TrackMetadata, quality: String = "HIGH") {
-        val inputData = Data.Builder()
-            .putString(AudioDownloadWorker.KEY_TRACK_ID, track.id)
-            .putString(AudioDownloadWorker.KEY_TITLE, track.title)
-            .putString(AudioDownloadWorker.KEY_ARTIST, track.artist)
-            .putString(AudioDownloadWorker.KEY_ALBUM, track.album)
-            .putLong(AudioDownloadWorker.KEY_DURATION, track.durationMs)
-            .putString(AudioDownloadWorker.KEY_THUMBNAIL, track.thumbnailUrl)
-            .putString(AudioDownloadWorker.KEY_QUALITY, quality)
-            .build()
+    fun enqueueDownload(track: TrackMetadata, quality: String = "HIGH"): Boolean {
+        return try {
+            val inputData = Data.Builder()
+                .putString(AudioDownloadWorker.KEY_TRACK_ID, track.id)
+                .putString(AudioDownloadWorker.KEY_TITLE, track.title)
+                .putString(AudioDownloadWorker.KEY_ARTIST, track.artist)
+                .putString(AudioDownloadWorker.KEY_ALBUM, track.album)
+                .putLong(AudioDownloadWorker.KEY_DURATION, track.durationMs)
+                .putString(AudioDownloadWorker.KEY_THUMBNAIL, track.thumbnailUrl)
+                .putString(AudioDownloadWorker.KEY_QUALITY, quality)
+                .build()
 
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresStorageNotLow(true)
-            .build()
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
 
-        val downloadWork = OneTimeWorkRequestBuilder<AudioDownloadWorker>()
-            .setConstraints(constraints)
-            .setInputData(inputData)
-            .addTag("download_${track.id}")
-            .build()
+            val downloadWork = OneTimeWorkRequestBuilder<AudioDownloadWorker>()
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .addTag("download_${track.id}")
+                .build()
 
-        workManager.enqueueUniqueWork(
-            "download_${track.id}",
-            ExistingWorkPolicy.KEEP,
-            downloadWork
-        )
+            workManager.enqueueUniqueWork(
+                "download_${track.id}",
+                ExistingWorkPolicy.KEEP,
+                downloadWork
+            )
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("AudioDownloadManager", "Failed to enqueue download: ${e.message}", e)
+            false
+        }
     }
 
     fun cancelDownload(trackId: String) {

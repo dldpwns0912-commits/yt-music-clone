@@ -53,6 +53,20 @@ data class ExtractionResult(
         }
     }
 
+    fun selectDownloadStream(quality: AudioQuality = AudioQuality.HIGH): AudioStream? {
+        val directStreams = audioStreams.filter {
+            !it.mimeType.contains("mpegURL", ignoreCase = true) &&
+            !it.url.contains("m3u8", ignoreCase = true) &&
+            !it.url.contains("manifest", ignoreCase = true)
+        }
+        val pool = directStreams.ifEmpty { audioStreams }
+        return when (quality) {
+            AudioQuality.HIGH -> pool.maxByOrNull { it.bitrate }
+            AudioQuality.MEDIUM -> pool.sortedBy { it.bitrate }.getOrNull(pool.size / 2) ?: pool.firstOrNull()
+            AudioQuality.LOW -> pool.minByOrNull { it.bitrate }
+        }
+    }
+
     fun isAllExpired(): Boolean {
         return audioStreams.isNotEmpty() && audioStreams.all { it.isExpired() }
     }

@@ -26,45 +26,76 @@ class InnerTubeClient @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-    @Volatile
-    private var cachedVisitorId: String? = null
+    
+    data class SessionConfig(val visitorData: String?, val apiKey: String?)
 
-    private suspend fun getVisitorId(): String = withContext(Dispatchers.IO) {
-        cachedVisitorId?.let { return@withContext it }
+    @Volatile
+    private var cachedSessionConfig: SessionConfig? = null
+
+    private suspend fun getSessionConfig(videoId: String): SessionConfig = withContext(Dispatchers.IO) {
+        cachedSessionConfig?.let {
+            if (!it.visitorData.isNullOrBlank() && !it.apiKey.isNullOrBlank()) {
+                return@withContext it
+            }
+        }
+
         try {
             val req = Request.Builder()
-                .url("https://www.youtube.com/sw.js_data")
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .url("https://www.youtube.com/watch?v=$videoId")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
                 .build()
+
             val resp = okHttpClient.newCall(req).execute()
-            val body = resp.body?.string() ?: ""
-            val matcher = Pattern.compile("\"(Cgt[^\"]+)\"").matcher(body)
+            val html = resp.body?.string() ?: ""
+
+            val pattern = Pattern.compile("ytcfg\\.set\\s*\\(\\s*(\\{.+?\\})\\s*\\)\\s*;")
+            val matcher = pattern.matcher(html)
             if (matcher.find()) {
-                val visitor = matcher.group(1)
-                cachedVisitorId = visitor
-                return@withContext visitor
+                val jsonStr = matcher.group(1)
+                val json = JSONObject(jsonStr)
+                val visitorData = json.optString("VISITOR_DATA", "")
+                val apiKey = json.optString("INNERTUBE_API_KEY", "")
+                if (visitorData.isNotBlank()) {
+                    val config = SessionConfig(visitorData, apiKey)
+                    cachedSessionConfig = config
+                    return@withContext config
+                }
             }
         } catch (_: Exception) {}
-        return@withContext "CgtmbHpSY2hpMWN0USjS0-jVBjIKCgJLUhIEGgAgamLfAgrcAjIyLllUPWpBd2l6R0tZ"
+
+        SessionConfig(
+            visitorData = "CgtHWTE1MG1DamRBMCjN8OjVBjIKCgJLUhIEGgAgOWLfAgrcAjIyLllUPXVKZVhTTzJVakl3MTI3bTVOZVlVRk9QQ2d4T3Fvc0JFWXBXbF8zaG8xTU1CUDRfSkhyN3YwMjV0Rm96WmZtVktfMEtwVEJyTDg3aGNqREtCa2N5dXBkTFFKTjAzaUZBTjZMeVh5emFfcG1vd2tDT3JnckNaanE3SkVZMVV6MExCVzFkS3hkQUc0alJKM1dFaVBDNmlOVURiNFJwRGVoMFZFZkRTX0ZENWUwUUdHOXVqWVdBbjMwSEY3LWpGaWVMd1Z0R3lzVHpoR1N0WmVtT1c4OGhGcTM1S0FoaGtwUmZXdm02S3p1SGNZLWx5b2lscGh0djZ4eFlvRFJnZ0JEeWY1cmFERFRaRmJDQ2xFQ0hORlpGM3pnX2lCMDY2dzd2QkdsVEthQW9rUGRBaERheHJNd2Z0eEZjT0ZUTkV2RVRrWEFPVlZnTF9GaDVfTlNQT3pEYlFEUQ==",
+            apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+        )
     }
 
     suspend fun getStreamInfo(
         videoId: String,
         clientType: InnerTubeClientType = InnerTubeClientType.VISIONOS
     ): ExtractionResult = withContext(Dispatchers.IO) {
-        val visitorId = getVisitorId()
-        val payload = buildPlayerPayload(videoId, clientType)
+        val sessionConfig = getSessionConfig(videoId)
+        val payload = buildPlayerPayload(videoId, clientType, sessionConfig.visitorData)
         val requestBody = payload.toString().toRequestBody(jsonMediaType)
 
+        val endpoint = if (!sessionConfig.apiKey.isNullOrBlank()) {
+            "https://www.youtube.com/youtubei/v1/player?key=${sessionConfig.apiKey}&prettyPrint=false"
+        } else {
+            "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
+        }
+
         val requestBuilder = Request.Builder()
-            .url("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
+            .url(endpoint)
             .post(requestBody)
             .header("User-Agent", clientType.userAgent)
             .header("Content-Type", "application/json")
             .header("X-YouTube-Client-Name", clientType.clientNumber)
             .header("X-YouTube-Client-Version", clientType.clientVersion)
             .header("Origin", "https://www.youtube.com")
-            .header("X-Goog-Visitor-Id", visitorId)
+
+        sessionConfig.visitorData?.let {
+            requestBuilder.header("X-Goog-Visitor-Id", it)
+        }
 
         clientType.referer?.let { referer ->
             requestBuilder.header("Referer", referer)
@@ -181,7 +212,11 @@ class InnerTubeClient @Inject constructor(
         }
     }
 
-    private fun buildPlayerPayload(videoId: String, clientType: InnerTubeClientType): JSONObject {
+    private fun buildPlayerPayload(
+        videoId: String,
+        clientType: InnerTubeClientType,
+        visitorData: String?
+    ): JSONObject {
         val root = JSONObject()
         root.put("videoId", videoId)
         root.put("contentCheckOk", true)
@@ -193,6 +228,10 @@ class InnerTubeClient @Inject constructor(
         client.put("clientVersion", clientType.clientVersion)
         client.put("hl", "en")
         client.put("gl", "US")
+
+        if (!visitorData.isNullOrBlank()) {
+            client.put("visitorData", visitorData)
+        }
 
         when (clientType) {
             InnerTubeClientType.VISIONOS -> {

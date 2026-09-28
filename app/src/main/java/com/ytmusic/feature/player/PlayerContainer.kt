@@ -66,7 +66,12 @@ fun PlayerContainer(
                     }
                 },
                 update = {
-                    it.player = viewModel.exoPlayer
+                    if (it.player != viewModel.exoPlayer) {
+                        it.player = viewModel.exoPlayer
+                    }
+                },
+                onRelease = {
+                    it.player = null
                 },
                 modifier = Modifier.fillMaxSize()
             )

@@ -1,6 +1,7 @@
 package com.ytmusic.core.media.player
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -20,6 +21,7 @@ import com.ytmusic.core.extractor.model.AudioQuality
 import com.ytmusic.core.extractor.model.TrackMetadata
 import com.ytmusic.core.media.effects.AudioEffectsManager
 import com.ytmusic.core.media.model.PlaybackState
+import com.ytmusic.core.media.service.MusicPlaybackService
 import com.ytmusic.core.storage.StorageManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -186,10 +188,20 @@ class MusicPlayerManager @Inject constructor(
         }
     }
 
+    private fun startPlaybackService() {
+        try {
+            val intent = Intent(context, MusicPlaybackService::class.java)
+            context.startService(intent)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to start MusicPlaybackService: ${e.message}")
+        }
+    }
+
     /**
      * Plays a track immediately, optionally replacing or updating the active queue.
      */
     fun playTrack(track: TrackMetadata, queue: List<TrackMetadata> = listOf(track)) {
+        startPlaybackService()
         coroutineScope.launch {
             _currentQueue.value = queue
             val targetIndex = queue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
@@ -213,6 +225,7 @@ class MusicPlayerManager @Inject constructor(
     }
 
     fun play() {
+        startPlaybackService()
         if (exoPlayer.playbackState == Player.STATE_ENDED) {
             exoPlayer.seekTo(0)
         }
@@ -267,6 +280,7 @@ class MusicPlayerManager @Inject constructor(
     }
 
     private fun playTrackAtIndex(index: Int) {
+        startPlaybackService()
         val track = _currentQueue.value.getOrNull(index) ?: return
         _currentIndex.value = index
         _playbackState.update { it.copy(currentTrack = track, isLoading = true) }
@@ -306,7 +320,10 @@ class MusicPlayerManager @Inject constructor(
 
         // 2. Extract playable streaming URL via yt-dlp / InnerTube extractor
         val extraction = extractor.extractStream(track.id)
-        val bestStream = extraction.selectBestStream(AudioQuality.HIGH)
+        val hlsStream = extraction.audioStreams.find {
+            it.mimeType.contains("mpegURL", ignoreCase = true) || it.url.contains("m3u8", ignoreCase = true)
+        }
+        val bestStream = hlsStream ?: extraction.selectBestStream(AudioQuality.HIGH)
             ?: throw IllegalStateException("No audio streams available for ${track.id}")
 
         bestStream.loudnessDb?.let { trackLoudnessCache[track.id] = it }

@@ -95,12 +95,8 @@ class MusicPlaybackService : MediaLibraryService() {
             unregisterReceiver(becomingNoisyReceiver)
         } catch (_: Exception) {}
 
-        mediaLibrarySession?.run {
-            player.release()
-            release()
-            mediaLibrarySession = null
-        }
-        playerManager.release()
+        mediaLibrarySession?.release()
+        mediaLibrarySession = null
         super.onDestroy()
     }
 }

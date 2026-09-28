@@ -18,17 +18,20 @@ class InnerTubeFallbackExtractor @Inject constructor(
         // 1. Primary: VISIONOS client (HLS audio/video streaming, unblocked)
         try {
             return client.getStreamInfo(videoId, InnerTubeClientType.VISIONOS)
-        } catch (e: ExtractorException.AgeRestrictedException) {
-            throw e
         } catch (e: Throwable) {
             errors.add(e)
         }
 
-        // 2. Secondary: WEB client
+        // 2. Secondary: ANDROID_MUSIC client
+        try {
+            return client.getStreamInfo(videoId, InnerTubeClientType.ANDROID_MUSIC)
+        } catch (e: Throwable) {
+            errors.add(e)
+        }
+
+        // 3. Tertiary: WEB client
         try {
             return client.getStreamInfo(videoId, InnerTubeClientType.WEB)
-        } catch (e: ExtractorException.AgeRestrictedException) {
-            throw e
         } catch (e: Throwable) {
             errors.add(e)
         }

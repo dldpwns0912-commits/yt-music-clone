@@ -51,10 +51,10 @@ fun MainScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 composable(Screen.Search.route) {
-                    SearchScreen()
+                    SearchScreen(playbackViewModel = playbackViewModel)
                 }
                 composable(Screen.Library.route) {
-                    LibraryScreen()
+                    LibraryScreen(playbackViewModel = playbackViewModel)
                 }
             }
 

@@ -82,10 +82,15 @@ class AudioDownloadWorker @AssistedInject constructor(
 
             // 2. Extract playable stream
             val extractionResult = streamExtractor.extractStream(trackId)
-            val stream = extractionResult.selectBestStream(audioQuality)
+            val stream = extractionResult.selectDownloadStream(audioQuality)
+                ?: extractionResult.selectBestStream(audioQuality)
                 ?: return@withContext Result.failure(workDataOf(KEY_ERROR to "No audio stream available"))
 
-            val extension = if (stream.codec == AudioCodec.OPUS) "opus" else "m4a"
+            val extension = when {
+                stream.mimeType.contains("mp4", ignoreCase = true) -> "m4a"
+                stream.mimeType.contains("webm", ignoreCase = true) || stream.codec == AudioCodec.OPUS -> "opus"
+                else -> "m4a"
+            }
             val targetFile = File(storageManager.downloadsDir, "$trackId.$extension")
             val tempFile = File(storageManager.downloadsDir, "$trackId.$extension.part")
 

@@ -62,7 +62,7 @@ class PlaybackViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { url ->
                     if (!url.isNullOrBlank()) {
-                        val pal = paletteExtractor.extractPalette(context, url)
+                        val pal = paletteExtractor.extractColorsFromUrl(context, url)
                         _palette.value = pal
                     }
                 }

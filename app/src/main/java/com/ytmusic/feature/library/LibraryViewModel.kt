@@ -9,6 +9,7 @@ import com.ytmusic.core.storage.StorageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -23,8 +24,9 @@ class LibraryViewModel @Inject constructor(
         .observeDownloadedTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val totalStorageBytes: StateFlow<Long> = storageManager
-        .totalDownloadedSize
+    val totalStorageBytes: StateFlow<Long> = trackDao
+        .observeDownloadedTracks()
+        .map { tracks -> tracks.sumOf { it.fileSize } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     fun deleteTrack(videoId: String) {

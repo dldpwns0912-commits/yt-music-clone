@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -67,7 +68,8 @@ fun SearchScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F12))
-            .padding(top = 16.dp)
+            .statusBarsPadding()
+            .padding(top = 8.dp)
     ) {
         // 1. Search Bar
         OutlinedTextField(

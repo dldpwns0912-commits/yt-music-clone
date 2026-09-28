@@ -84,7 +84,7 @@ class SearchViewModel @Inject constructor(
                 if (directVideoId != null) {
                     try {
                         val extraction = extractor.extractStream(directVideoId)
-                        resultsList.add(extraction.trackMetadata)
+                        resultsList.add(extraction.metadata)
                     } catch (_: Exception) {}
                 }
 

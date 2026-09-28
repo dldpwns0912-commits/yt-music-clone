@@ -36,6 +36,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.glance.appwidget.updateAll
 import com.ytmusic.core.system.OfflineModeTileService
+import com.ytmusic.feature.widget.MusicGlanceWidget
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import coil.ImageLoader

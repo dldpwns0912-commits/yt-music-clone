@@ -91,8 +91,16 @@ class SearchViewModel @Inject constructor(
                     )
                 }
 
-                // 2. Curated & dynamically resolved search results
-                val results = if (localMatches.isNotEmpty()) {
+                // 2. Fetch live YouTube search results
+                val onlineResults = try {
+                    extractor.searchVideos(trimmed)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+
+                val results = if (onlineResults.isNotEmpty()) {
+                    onlineResults
+                } else if (localMatches.isNotEmpty()) {
                     localMatches
                 } else {
                     generateCuratedSearchResults(trimmed)

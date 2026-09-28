@@ -17,9 +17,9 @@
     <application
         android:name=".YTMusicApplication"
         android:allowBackup="true"
-        android:icon="@android:drawable/ic_media_play"
+        android:icon="@drawable/ic_launcher"
         android:label="YouTube Music"
-        android:roundIcon="@android:drawable/ic_media_play"
+        android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar"
         tools:targetApi="35">

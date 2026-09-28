@@ -343,11 +343,16 @@ class MusicPlayerManager @Inject constructor(
             .setExtras(extras)
             .build()
 
-        return MediaItem.Builder()
+        val builder = MediaItem.Builder()
             .setMediaId(track.id)
             .setUri(uri)
             .setMediaMetadata(metadata)
-            .build()
+
+        if (uri.toString().contains("hls") || uri.toString().contains("m3u8")) {
+            builder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+        }
+
+        return builder.build()
     }
 
     /**

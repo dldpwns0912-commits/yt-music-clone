@@ -1,11 +1,13 @@
 package com.ytmusic.core.extractor
 
 import com.ytmusic.core.extractor.cache.StreamCacheManager
+import com.ytmusic.core.extractor.innertube.InnerTubeClient
 import com.ytmusic.core.extractor.innertube.InnerTubeFallbackExtractor
 import com.ytmusic.core.extractor.model.AudioQuality
 import com.ytmusic.core.extractor.model.ExtractionResult
 import com.ytmusic.core.extractor.model.ExtractorException
 import com.ytmusic.core.extractor.model.ExtractorSource
+import com.ytmusic.core.extractor.model.TrackMetadata
 import com.ytmusic.core.extractor.ytdlp.YtDlpExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +18,7 @@ import javax.inject.Singleton
 class CompositeStreamExtractor @Inject constructor(
     private val ytDlpExtractor: YtDlpExtractor,
     private val innerTubeFallbackExtractor: InnerTubeFallbackExtractor,
+    private val innerTubeClient: InnerTubeClient,
     private val cacheManager: StreamCacheManager
 ) : YoutubeStreamExtractor {
 
@@ -33,26 +36,24 @@ class CompositeStreamExtractor @Inject constructor(
 
         val errors = mutableListOf<Throwable>()
 
-        // 2. Primary Strategy: Dynamic yt-dlp binary if available
-        if (ytDlpExtractor.isSupported()) {
-            try {
-                val result = ytDlpExtractor.extract(videoId)
-                cacheManager.put(videoId, result)
-                return@withContext result
-            } catch (e: ExtractorException.AgeRestrictedException) {
-                throw e
-            } catch (e: Throwable) {
-                errors.add(e)
-            }
-        }
-
-        // 3. Fallback Strategy: InnerTube Direct HTTPS Extractor
+        // 2. Primary Strategy: InnerTube VISIONOS (fast, 0 auth, reliable HLS streaming)
         try {
             val result = innerTubeFallbackExtractor.extract(videoId)
             cacheManager.put(videoId, result)
             return@withContext result
         } catch (e: Throwable) {
             errors.add(e)
+        }
+
+        // 3. Fallback: yt-dlp binary if available
+        if (ytDlpExtractor.isSupported()) {
+            try {
+                val result = ytDlpExtractor.extract(videoId)
+                cacheManager.put(videoId, result)
+                return@withContext result
+            } catch (e: Throwable) {
+                errors.add(e)
+            }
         }
 
         throw ExtractorException.AllExtractorsFailedException(videoId, errors)
@@ -66,5 +67,9 @@ class CompositeStreamExtractor @Inject constructor(
         val bestStream = result.selectBestStream(quality)
             ?: throw ExtractorException.ParsingException("No playable stream matching quality $quality for video $videoId")
         return bestStream.url
+    }
+
+    override suspend fun searchVideos(query: String): List<TrackMetadata> {
+        return innerTubeClient.search(query)
     }
 }

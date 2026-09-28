@@ -99,13 +99,25 @@ class AudioDownloadWorker @AssistedInject constructor(
             // 3. Resume support
             val existingBytes = if (tempFile.exists()) tempFile.length() else 0L
 
-            val requestBuilder = Request.Builder().url(stream.url)
+            val requestBuilder = Request.Builder()
+                .url(stream.url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
             if (existingBytes > 0L) {
                 requestBuilder.header("Range", "bytes=$existingBytes-")
             }
 
-            val response = okHttpClient.newCall(requestBuilder.build()).execute()
-            if (!response.isSuccessful && response.code != 416) {
+            var response = okHttpClient.newCall(requestBuilder.build()).execute()
+            if (response.code == 416) {
+                tempFile.delete()
+                response = okHttpClient.newCall(
+                    Request.Builder()
+                        .url(stream.url)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                        .build()
+                ).execute()
+            }
+
+            if (!response.isSuccessful) {
                 if (runAttemptCount < 3) return@withContext Result.retry()
                 return@withContext Result.failure(workDataOf(KEY_ERROR to "HTTP ${response.code}"))
             }

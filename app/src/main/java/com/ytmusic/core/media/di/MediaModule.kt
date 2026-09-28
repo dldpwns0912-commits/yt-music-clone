@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -57,8 +58,10 @@ object MediaModule {
             .setConnectTimeoutMs(20_000)
             .setReadTimeoutMs(20_000)
 
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(httpDataSourceFactory)
+            .setDataSourceFactory(dataSourceFactory)
 
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)

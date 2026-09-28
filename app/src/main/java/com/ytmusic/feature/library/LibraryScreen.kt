@@ -1,6 +1,8 @@
 package com.ytmusic.feature.library
 
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,11 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileDownloadDone
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,7 +60,14 @@ fun LibraryScreen(
 ) {
     val downloadedTracks by libraryViewModel.downloadedTracks.collectAsState()
     val totalBytes by libraryViewModel.totalStorageBytes.collectAsState()
+    val syncMessage by libraryViewModel.syncMessage.collectAsState()
+    val context = LocalContext.current
     var trackToDelete by remember { mutableStateOf<TrackEntity?>(null) }
+
+    syncMessage?.let { msg ->
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        libraryViewModel.clearSyncMessage()
+    }
 
     Column(
         modifier = modifier
@@ -68,36 +76,59 @@ fun LibraryScreen(
             .statusBarsPadding()
             .padding(top = 8.dp)
     ) {
-        // Header
+        // Compact Sleek Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.VideoLibrary,
-                contentDescription = null,
-                tint = Color(0xFF06B6D4),
-                modifier = Modifier.size(28.dp)
+            Text(
+                text = "보관함",
+                color = Color.White,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
             )
+
             Spacer(modifier = Modifier.width(10.dp))
-            Column {
+
+            // Storage badge pill
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF18181B))
+                    .border(1.dp, Color(0xFF27272A), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
                 Text(
-                    text = "보관함",
-                    color = Color.White,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "${downloadedTracks.size}곡 • ${formatBytes(totalBytes)}",
+                    color = Color(0xFF06B6D4),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
                 )
-                Text(
-                    text = "저장된 영상 ${downloadedTracks.size}개 • 사용 용량 ${formatBytes(totalBytes)}",
-                    color = Color(0xFFA1A1AA),
-                    fontSize = 12.sp
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // Daily Sync Button
+            IconButton(
+                onClick = { libraryViewModel.triggerDailySync() },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = "일일 동기화 실행",
+                    tint = Color(0xFFA1A1AA),
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = Color(0xFF27272A),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
 
         if (downloadedTracks.isEmpty()) {
             Box(
@@ -111,31 +142,32 @@ fun LibraryScreen(
                         imageVector = Icons.Default.FileDownloadDone,
                         contentDescription = null,
                         tint = Color(0xFF3F3F46),
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(48.dp)
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "다운로드된 영상이 없습니다",
+                        text = "저장된 영상이 없습니다",
                         color = Color.White,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "플레이어 화면에서 다운로드 버튼을 눌러\n오프라인에 저장해 보세요",
+                        text = "플레이어 화면에서 다운로드하거나,\n지정 플레이리스트가 하루마다 자동 동기화됩니다",
                         color = Color(0xFFA1A1AA),
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 140.dp, top = 8.dp)
+                contentPadding = PaddingValues(bottom = 140.dp, top = 2.dp)
             ) {
                 items(downloadedTracks, key = { it.id }) { track ->
-                    DownloadedTrackItem(
+                    CompactDownloadedTrackItem(
                         track = track,
                         onPlayClick = {
                             val allMetadata = downloadedTracks.map { libraryViewModel.toTrackMetadata(it) }
@@ -156,7 +188,7 @@ fun LibraryScreen(
         AlertDialog(
             onDismissRequest = { trackToDelete = null },
             title = { Text("영상 삭제") },
-            text = { Text("'${track.title}' 영상을 기기에서 완전히 삭제하시겠습니까?") },
+            text = { Text("'${track.title}' 영상을 기기에서 삭제하시겠습니까?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -180,88 +212,81 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun DownloadedTrackItem(
+private fun CompactDownloadedTrackItem(
     track: TrackEntity,
     onPlayClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clickable { onPlayClick() },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF18181B))
+            .clickable { onPlayClick() }
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
+        // Compact 16:9 Thumbnail (48 x 32 dp)
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .size(width = 48.dp, height = 32.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF27272A))
         ) {
-            // Thumbnail
-            Box(
-                modifier = Modifier
-                    .size(width = 80.dp, height = 48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF27272A))
-            ) {
-                AsyncImage(
-                    model = track.thumbnailUrl,
-                    contentDescription = track.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
+            AsyncImage(
+                model = track.thumbnailUrl,
+                contentDescription = track.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
 
-            Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
-            // Details
-            Column(modifier = Modifier.weight(1f)) {
+        // Track Title & Details
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = track.title,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = track.title,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    text = track.artist,
+                    color = Color(0xFFA1A1AA),
+                    fontSize = 11.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (track.fileSize > 0) {
                     Text(
-                        text = track.artist,
-                        color = Color(0xFFA1A1AA),
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = " • ${formatBytes(track.fileSize)}",
+                        color = Color(0xFF06B6D4),
+                        fontSize = 11.sp
                     )
-                    if (track.fileSize > 0) {
-                        Text(
-                            text = " • ${formatBytes(track.fileSize)}",
-                            color = Color(0xFF06B6D4),
-                            fontSize = 11.sp
-                        )
-                    }
                 }
             }
+        }
 
-            // Play icon
-            IconButton(onClick = onPlayClick) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "재생",
-                    tint = Color(0xFF06B6D4)
-                )
-            }
+        Spacer(modifier = Modifier.width(8.dp))
 
-            // Delete icon
-            IconButton(onClick = onDeleteClick) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = "삭제",
-                    tint = Color(0xFFA1A1AA)
-                )
-            }
+        // Discreet Delete Button
+        IconButton(
+            onClick = onDeleteClick,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.DeleteOutline,
+                contentDescription = "삭제",
+                tint = Color(0xFF71717A),
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

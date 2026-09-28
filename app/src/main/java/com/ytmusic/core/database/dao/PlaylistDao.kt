@@ -26,6 +26,10 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     fun observePlaylistWithTracks(playlistId: String): Flow<PlaylistWithTracks?>
 
+    @Transaction
+    @Query("SELECT * FROM playlists WHERE id = :playlistId")
+    suspend fun getPlaylistWithTracks(playlistId: String): PlaylistWithTracks?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCrossRef(crossRef: PlaylistTrackCrossRef)
 

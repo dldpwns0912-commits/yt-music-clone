@@ -31,6 +31,10 @@ class YTMusicApplication : Application(), Configuration.Provider, ImageLoaderFac
         try {
             androidx.work.WorkManager.initialize(this, workManagerConfiguration)
         } catch (_: Exception) {}
+
+        try {
+            com.ytmusic.core.downloader.DailyPlaylistSyncWorker.scheduleDailySync(this)
+        } catch (_: Exception) {}
     }
 
     override fun newImageLoader(): ImageLoader {

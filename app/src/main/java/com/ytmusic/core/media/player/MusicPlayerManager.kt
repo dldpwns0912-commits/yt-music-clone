@@ -308,14 +308,14 @@ class MusicPlayerManager @Inject constructor(
         val localTrack = trackDao.getTrackById(track.id)
         if (localTrack?.isDownloaded == true && !localTrack.localFilePath.isNullOrEmpty()) {
             val file = File(localTrack.localFilePath)
-            if (file.exists()) {
-                return buildMediaItem(track, Uri.fromFile(file), loudnessDb = 0.0)
+            if (file.exists() && file.length() > 1024L) {
+                return buildMediaItem(track, Uri.fromFile(file), loudnessDb = 0.0, mimeType = localTrack.mimeType)
             }
         }
 
         // Check Quick Settings Offline Mode
         if (OfflineModeTileService.isOfflineModeEnabled(context)) {
-            throw IllegalStateException("Offline Mode is active. Streaming track '${track.title}' is blocked.")
+            throw IllegalStateException("오프라인 모드가 활성화되어 있습니다. 스트리밍이 차단되었습니다.")
         }
 
         // 2. Extract playable streaming URL via yt-dlp / InnerTube extractor
@@ -342,10 +342,10 @@ class MusicPlayerManager @Inject constructor(
             )
         )
 
-        return buildMediaItem(track, Uri.parse(bestStream.url), bestStream.loudnessDb)
+        return buildMediaItem(track, Uri.parse(bestStream.url), bestStream.loudnessDb, bestStream.mimeType)
     }
 
-    private fun buildMediaItem(track: TrackMetadata, uri: Uri, loudnessDb: Double?): MediaItem {
+    private fun buildMediaItem(track: TrackMetadata, uri: Uri, loudnessDb: Double?, mimeType: String? = null): MediaItem {
         val extras = Bundle().apply {
             putDouble("loudnessDb", loudnessDb ?: 0.0)
             putString("artistId", track.artistId)
@@ -365,8 +365,15 @@ class MusicPlayerManager @Inject constructor(
             .setUri(uri)
             .setMediaMetadata(metadata)
 
-        if (uri.toString().contains("hls") || uri.toString().contains("m3u8")) {
+        val uriStr = uri.toString()
+        if (uriStr.contains("hls") || uriStr.contains("m3u8")) {
             builder.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8)
+        } else if (!mimeType.isNullOrBlank()) {
+            builder.setMimeType(mimeType)
+        } else if (uriStr.endsWith(".m4a") || uriStr.endsWith(".mp4")) {
+            builder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_MP4)
+        } else if (uriStr.endsWith(".opus") || uriStr.endsWith(".webm")) {
+            builder.setMimeType(androidx.media3.common.MimeTypes.AUDIO_OPUS)
         }
 
         return builder.build()

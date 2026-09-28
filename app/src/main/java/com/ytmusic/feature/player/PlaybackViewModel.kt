@@ -6,17 +6,16 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.PlaybackParameters
 import com.ytmusic.core.database.dao.PlaylistDao
 import com.ytmusic.core.database.dao.TrackDao
-import com.ytmusic.core.database.entity.PlaylistTrackCrossRef
-import com.ytmusic.core.database.entity.TrackEntity
 import com.ytmusic.core.designsystem.palette.ExtractedPalette
 import com.ytmusic.core.designsystem.palette.PaletteExtractor
 import com.ytmusic.core.downloader.AudioDownloadManager
 import com.ytmusic.core.extractor.model.TrackMetadata
+import com.ytmusic.core.media.caption.CaptionItem
+import com.ytmusic.core.media.caption.SubtitleManager
 import com.ytmusic.core.media.model.PlaybackState
 import com.ytmusic.core.media.player.MusicPlayerManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,7 +34,8 @@ class PlaybackViewModel @Inject constructor(
     private val paletteExtractor: PaletteExtractor,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
-    private val downloadManager: AudioDownloadManager
+    private val downloadManager: AudioDownloadManager,
+    private val subtitleManager: SubtitleManager
 ) : ViewModel() {
 
     val exoPlayer = playerManager.exoPlayer
@@ -55,7 +55,21 @@ class PlaybackViewModel @Inject constructor(
     private val _downloadToast = MutableStateFlow<String?>(null)
     val downloadToast: StateFlow<String?> = _downloadToast.asStateFlow()
 
+    // Subtitles & Captions State
+    private val _captions = MutableStateFlow<List<CaptionItem>>(emptyList())
+    val captions: StateFlow<List<CaptionItem>> = _captions.asStateFlow()
+
+    private val _isSubtitlesEnabled = MutableStateFlow(true)
+    val isSubtitlesEnabled: StateFlow<Boolean> = _isSubtitlesEnabled.asStateFlow()
+
+    val currentSubtitle: StateFlow<String?> = combine(playbackState, _captions, _isSubtitlesEnabled) { state, caps, enabled ->
+        if (!enabled || caps.isEmpty()) return@combine null
+        val pos = state.currentPositionMs
+        caps.find { pos in it.startMs..(it.endMs) }?.text
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     init {
+        // Dynamic Palette Extraction
         viewModelScope.launch {
             playbackState
                 .map { it.currentTrack?.thumbnailUrl }
@@ -64,6 +78,20 @@ class PlaybackViewModel @Inject constructor(
                     if (!url.isNullOrBlank()) {
                         val pal = paletteExtractor.extractColorsFromUrl(context, url)
                         _palette.value = pal
+                    }
+                }
+        }
+
+        // Live Subtitle Fetching
+        viewModelScope.launch {
+            playbackState
+                .map { it.currentTrack?.id }
+                .distinctUntilChanged()
+                .collect { trackId ->
+                    if (!trackId.isNullOrBlank()) {
+                        _captions.value = subtitleManager.getCaptions(trackId)
+                    } else {
+                        _captions.value = emptyList()
                     }
                 }
         }
@@ -96,6 +124,10 @@ class PlaybackViewModel @Inject constructor(
     fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float) {
         playerManager.setPlaybackSpeed(speed)
         playerManager.exoPlayer.playbackParameters = PlaybackParameters(speed, pitch)
+    }
+
+    fun toggleSubtitles() {
+        _isSubtitlesEnabled.value = !_isSubtitlesEnabled.value
     }
 
     fun downloadCurrentTrack() {

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
@@ -85,6 +86,9 @@ fun FullPlayer(
         viewModel.clearDownloadToast()
     }
 
+    val isSubtitlesEnabled by viewModel.isSubtitlesEnabled.collectAsState()
+    val currentSubtitle by viewModel.currentSubtitle.collectAsState()
+
     var showSpeedDialog by remember { mutableStateOf(false) }
     var userSliderPos by remember { mutableStateOf<Float?>(null) }
     var currentSpeed by remember { mutableFloatStateOf(1.0f) }
@@ -105,7 +109,7 @@ fun FullPlayer(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 1. Top Bar (Collapse, Title, PIP, Speed)
+            // 1. Top Bar (Collapse, Title, Subtitles, PIP, Speed)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -130,6 +134,15 @@ fun FullPlayer(
                 )
 
                 Row {
+                    // Subtitles / Captions Toggle Button
+                    IconButton(onClick = { viewModel.toggleSubtitles() }) {
+                        Icon(
+                            imageVector = Icons.Default.ClosedCaption,
+                            contentDescription = "자막 켜기/끄기",
+                            tint = if (isSubtitlesEnabled) Color(0xFF06B6D4) else Color(0xFF71717A)
+                        )
+                    }
+
                     // PIP Mode Button
                     IconButton(onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -160,7 +173,7 @@ fun FullPlayer(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 2. 16:9 Video Player View (Plays YouTube Video Surface)
+            // 2. 16:9 Video Player View (Plays YouTube Video Surface with Subtitles)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -189,6 +202,26 @@ fun FullPlayer(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Real-time Subtitle Text Overlay
+                if (isSubtitlesEnabled && !currentSubtitle.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 12.dp, start = 16.dp, end = 16.dp)
+                            .background(Color(0xCC000000), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = currentSubtitle ?: "",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 2
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -73,6 +73,12 @@
                 android:resource="@xml/glance_widget_info" />
         </receiver>
 
+        <!-- WorkManager System Foreground Service for Android 14+ -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
         <!-- Disable default WorkManager initializer to enable Hilt on-demand initialization -->
         <provider
             android:name="androidx.startup.InitializationProvider"

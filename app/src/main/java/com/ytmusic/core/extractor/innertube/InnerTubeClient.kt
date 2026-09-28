@@ -96,6 +96,7 @@ class InnerTubeClient @Inject constructor(
     }
 
     suspend fun search(query: String): List<TrackMetadata> = withContext(Dispatchers.IO) {
+        val visitorData = getVisitorData()
         val root = JSONObject().apply {
             put("query", query)
             val context = JSONObject().apply {
@@ -104,6 +105,9 @@ class InnerTubeClient @Inject constructor(
                     put("clientVersion", "2.20240920.01.00")
                     put("hl", "ko")
                     put("gl", "KR")
+                    if (visitorData.isNotBlank()) {
+                        put("visitorData", visitorData)
+                    }
                 }
                 put("client", client)
             }
@@ -113,14 +117,50 @@ class InnerTubeClient @Inject constructor(
         val req = Request.Builder()
             .url("https://www.youtube.com/youtubei/v1/search?prettyPrint=false")
             .post(root.toString().toRequestBody(jsonMediaType))
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
             .header("Content-Type", "application/json")
+            .header("X-YouTube-Client-Name", "1")
+            .header("X-YouTube-Client-Version", "2.20240920.01.00")
+            .header("Origin", "https://www.youtube.com")
+            .header("X-Goog-Visitor-Id", visitorData)
             .build()
 
-        try {
+        val results = try {
             val res = okHttpClient.newCall(req).execute()
-            val body = res.body?.string() ?: return@withContext emptyList()
+            val body = res.body?.string() ?: ""
             parseSearchResults(body)
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        if (results.isNotEmpty()) {
+            return@withContext results
+        }
+
+        // Reliable Fallback: YouTube HTML Search Scrape
+        return@withContext searchHtmlFallback(query)
+    }
+
+    private fun searchHtmlFallback(query: String): List<TrackMetadata> {
+        return try {
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val req = Request.Builder()
+                .url("https://www.youtube.com/results?search_query=$encodedQuery&hl=ko")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .header("Accept-Language", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7")
+                .build()
+
+            val res = okHttpClient.newCall(req).execute()
+            val html = res.body?.string() ?: return emptyList()
+
+            val pattern = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
+            val matcher = pattern.matcher(html)
+            if (matcher.find()) {
+                val json = matcher.group(1) ?: return emptyList()
+                parseSearchResults(json)
+            } else {
+                emptyList()
+            }
         } catch (_: Exception) {
             emptyList()
         }
@@ -130,11 +170,22 @@ class InnerTubeClient @Inject constructor(
         val results = mutableListOf<TrackMetadata>()
         try {
             val root = JSONObject(jsonString)
-            val contents = root.optJSONObject("contents")
+            var contents = root.optJSONObject("contents")
                 ?.optJSONObject("twoColumnSearchResultsRenderer")
                 ?.optJSONObject("primaryContents")
                 ?.optJSONObject("sectionListRenderer")
-                ?.optJSONArray("contents") ?: return emptyList()
+                ?.optJSONArray("contents")
+
+            if (contents == null) {
+                val commands = root.optJSONArray("onResponseReceivedCommands")
+                if (commands != null && commands.length() > 0) {
+                    contents = commands.optJSONObject(0)
+                        ?.optJSONObject("appendContinuationItemsAction")
+                        ?.optJSONArray("continuationItems")
+                }
+            }
+
+            if (contents == null) return emptyList()
 
             for (i in 0 until contents.length()) {
                 val section = contents.optJSONObject(i) ?: continue
@@ -143,16 +194,21 @@ class InnerTubeClient @Inject constructor(
 
                 for (j in 0 until items.length()) {
                     val item = items.optJSONObject(j) ?: continue
-                    val video = item.optJSONObject("videoRenderer") ?: continue
+                    val video = item.optJSONObject("videoRenderer")
+                        ?: item.optJSONObject("compactVideoRenderer")
+                        ?: continue
 
                     val videoId = video.optString("videoId")
                     if (videoId.isNullOrBlank()) continue
 
                     val titleRuns = video.optJSONObject("title")?.optJSONArray("runs")
-                    val title = titleRuns?.optJSONObject(0)?.optString("text") ?: "YouTube Track"
+                    val title = titleRuns?.optJSONObject(0)?.optString("text")
+                        ?: video.optJSONObject("title")?.optString("simpleText")
+                        ?: "영상"
 
                     val ownerRuns = video.optJSONObject("ownerText")?.optJSONArray("runs")
-                    val artist = ownerRuns?.optJSONObject(0)?.optString("text") ?: "Unknown Artist"
+                        ?: video.optJSONObject("shortBylineText")?.optJSONArray("runs")
+                    val artist = ownerRuns?.optJSONObject(0)?.optString("text") ?: "채널"
 
                     val thumbs = video.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                     val thumbUrl = if (thumbs != null && thumbs.length() > 0) {

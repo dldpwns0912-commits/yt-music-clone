@@ -20,8 +20,8 @@ class MediaNotificationManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        const val NOTIFICATION_CHANNEL_ID = "ytmusic_playback_channel"
-        const val NOTIFICATION_CHANNEL_NAME = "Music Playback"
+        const val NOTIFICATION_CHANNEL_ID = "ytmusic_playback_channel_v2"
+        const val NOTIFICATION_CHANNEL_NAME = "음악 재생"
         const val NOTIFICATION_ID = 1001
     }
 
@@ -32,19 +32,16 @@ class MediaNotificationManager @Inject constructor(
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val existing = notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID)
-            if (existing == null) {
-                val channel = NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    NOTIFICATION_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
-                ).apply {
-                    description = "YouTube Music active playback notification and controls"
-                    setShowBadge(false)
-                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-                }
-                notificationManager.createNotificationChannel(channel)
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                NOTIFICATION_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "음악 재생 컨트롤 및 알림"
+                setShowBadge(false)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
+            notificationManager.createNotificationChannel(channel)
         }
     }
 

@@ -85,9 +85,11 @@ class MusicPlaybackService : MediaLibraryService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaLibrarySession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            stopSelf()
+        if (player != null && (player.playWhenReady || player.isPlaying || player.mediaItemCount > 0)) {
+            // Keep running in background with notification active
+            return
         }
+        stopSelf()
     }
 
     override fun onDestroy() {

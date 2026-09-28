@@ -20,7 +20,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileDownloadDone
 import androidx.compose.material.icons.filled.Sync
@@ -63,6 +66,12 @@ fun LibraryScreen(
     val syncMessage by libraryViewModel.syncMessage.collectAsState()
     val context = LocalContext.current
     var trackToDelete by remember { mutableStateOf<TrackEntity?>(null) }
+
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { libraryViewModel.importLocalFile(it) }
+    }
 
     syncMessage?.let { msg ->
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
@@ -109,6 +118,21 @@ fun LibraryScreen(
             }
 
             Spacer(modifier = Modifier.weight(1f))
+
+            // Add Local Video File Button
+            IconButton(
+                onClick = { filePicker.launch(arrayOf("video/*", "audio/*")) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "내 기기 영상 추가",
+                    tint = Color(0xFF06B6D4),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
 
             // Daily Sync Button
             IconButton(

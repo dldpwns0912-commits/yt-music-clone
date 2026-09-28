@@ -71,7 +71,7 @@ class AudioDownloadWorker @AssistedInject constructor(
         val notificationId = NOTIFICATION_ID_BASE + (trackId.hashCode() and 0x7FFFFFFF % 10000)
 
         try {
-            setForeground(createForegroundInfo(notificationId, title, artist, 0, false))
+            notificationManager.notify(notificationId, buildNotification(title, artist, 0, false))
         } catch (_: Exception) {}
 
         try {
@@ -233,9 +233,9 @@ class AudioDownloadWorker @AssistedInject constructor(
         progress: Int,
         completed: Boolean
     ) = NotificationCompat.Builder(context, CHANNEL_ID)
-        .setContentTitle(if (completed) "Download Complete" else "Downloading: $title")
+        .setContentTitle(if (completed) "다운로드 완료" else "다운로드 중: $title")
         .setContentText(artist)
-        .setSmallIcon(android.R.drawable.stat_sys_download)
+        .setSmallIcon(com.ytmusic.R.drawable.ic_launcher)
         .setProgress(100, progress, progress == 0 && !completed)
         .setOngoing(!completed)
         .setAutoCancel(completed)

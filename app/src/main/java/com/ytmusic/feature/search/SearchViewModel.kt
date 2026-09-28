@@ -52,9 +52,9 @@ class SearchViewModel @Inject constructor(
             return
         }
 
-        // Debounce auto-search by 300ms
+        // Debounce auto-search by 350ms
         searchDebounceJob = viewModelScope.launch {
-            delay(300L)
+            delay(350L)
             executeSearch(newQuery, recordHistory = false)
         }
     }
@@ -77,18 +77,15 @@ class SearchViewModel @Inject constructor(
             }
 
             try {
-                // 1. Check local tracks matching query
-                val localMatches = trackDao.searchTracks(trimmed).first().map { entity ->
-                    TrackMetadata(
-                        id = entity.id,
-                        title = entity.title,
-                        artist = entity.artist,
-                        artistId = entity.artistId,
-                        album = entity.album,
-                        albumId = entity.albumId,
-                        durationMs = entity.durationMs,
-                        thumbnailUrl = entity.thumbnailUrl
-                    )
+                val resultsList = mutableListOf<TrackMetadata>()
+
+                // 1. Direct YouTube URL or Video ID Resolution
+                val directVideoId = extractVideoId(trimmed)
+                if (directVideoId != null) {
+                    try {
+                        val extraction = extractor.extractStream(directVideoId)
+                        resultsList.add(extraction.trackMetadata)
+                    } catch (_: Exception) {}
                 }
 
                 // 2. Fetch live YouTube search results
@@ -98,21 +95,59 @@ class SearchViewModel @Inject constructor(
                     emptyList()
                 }
 
-                val results = if (onlineResults.isNotEmpty()) {
-                    onlineResults
-                } else if (localMatches.isNotEmpty()) {
-                    localMatches
-                } else {
-                    generateCuratedSearchResults(trimmed)
+                for (track in onlineResults) {
+                    if (resultsList.none { it.id == track.id }) {
+                        resultsList.add(track)
+                    }
                 }
 
-                _searchResults.value = results
+                // 3. Local database matches
+                try {
+                    val localMatches = trackDao.searchTracks(trimmed).first().map { entity ->
+                        TrackMetadata(
+                            id = entity.id,
+                            title = entity.title,
+                            artist = entity.artist,
+                            artistId = entity.artistId,
+                            album = entity.album,
+                            albumId = entity.albumId,
+                            durationMs = entity.durationMs,
+                            thumbnailUrl = entity.thumbnailUrl
+                        )
+                    }
+
+                    for (track in localMatches) {
+                        if (resultsList.none { it.id == track.id }) {
+                            resultsList.add(track)
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                _searchResults.value = resultsList
             } catch (_: Exception) {
                 _searchResults.value = emptyList()
             } finally {
                 _isSearching.value = false
             }
         }
+    }
+
+    private fun extractVideoId(input: String): String? {
+        val trimmed = input.trim()
+        if (trimmed.matches(Regex("^[a-zA-Z0-9_-]{11}$"))) {
+            return trimmed
+        }
+        val patterns = listOf(
+            Regex("(?:v=|/v/|youtu\\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})"),
+            Regex("youtube\\.com/watch\\?.*v=([a-zA-Z0-9_-]{11})")
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(trimmed)
+            if (match != null) {
+                return match.groupValues[1]
+            }
+        }
+        return null
     }
 
     fun deleteHistoryItem(query: String) {
@@ -124,34 +159,6 @@ class SearchViewModel @Inject constructor(
     fun clearAllHistory() {
         viewModelScope.launch(Dispatchers.IO) {
             searchHistoryDao.clearAllSearches()
-        }
-    }
-
-    private fun generateCuratedSearchResults(query: String): List<TrackMetadata> {
-        val lower = query.lowercase()
-        val library = listOf(
-            TrackMetadata("dQw4w9WgXcQ", "Never Gonna Give You Up", "Rick Astley", thumbnailUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", durationMs = 212000L),
-            TrackMetadata("kJQP7kiw5Fk", "Despacito", "Luis Fonsi ft. Daddy Yankee", thumbnailUrl = "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg", durationMs = 282000L),
-            TrackMetadata("JGwWNGJdvx8", "Shape of You", "Ed Sheeran", thumbnailUrl = "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg", durationMs = 233000L),
-            TrackMetadata("fJ9rUzIMcZQ", "Bohemian Rhapsody", "Queen", thumbnailUrl = "https://i.ytimg.com/vi/fJ9rUzIMcZQ/hqdefault.jpg", durationMs = 355000L),
-            TrackMetadata("9bZkp7q19f0", "Gangnam Style", "PSY", thumbnailUrl = "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg", durationMs = 219000L),
-            TrackMetadata("CevxZvSJLk8", "Roar", "Katy Perry", thumbnailUrl = "https://i.ytimg.com/vi/CevxZvSJLk8/hqdefault.jpg", durationMs = 223000L),
-            TrackMetadata("k2qgadSvNyU", "New Rules", "Dua Lipa", thumbnailUrl = "https://i.ytimg.com/vi/k2qgadSvNyU/hqdefault.jpg", durationMs = 209000L),
-            TrackMetadata("OPf0YbXqDm0", "Uptown Funk", "Mark Ronson ft. Bruno Mars", thumbnailUrl = "https://i.ytimg.com/vi/OPf0YbXqDm0/hqdefault.jpg", durationMs = 270000L)
-        )
-
-        return library.filter {
-            it.title.lowercase().contains(lower) || it.artist.lowercase().contains(lower)
-        }.ifEmpty {
-            listOf(
-                TrackMetadata(
-                    id = "custom_${System.currentTimeMillis()}",
-                    title = query,
-                    artist = "Top Result",
-                    thumbnailUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-                    durationMs = 210000L
-                )
-            )
         }
     }
 }

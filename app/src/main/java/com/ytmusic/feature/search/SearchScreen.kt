@@ -76,7 +76,7 @@ fun SearchScreen(
             value = query,
             onValueChange = { searchViewModel.onQueryChanged(it) },
             placeholder = {
-                Text(text = "음악 또는 영상 검색", color = Color(0xFF71717A))
+                Text(text = "검색어 또는 유튜브 링크 입력", color = Color(0xFF71717A))
             },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = "검색", tint = Color(0xFF06B6D4))

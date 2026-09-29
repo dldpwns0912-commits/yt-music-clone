@@ -245,7 +245,7 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    private fun importSingleUri(uri: Uri): String? {
+    private suspend fun importSingleUri(uri: Uri): String? {
         val contentResolver = context.contentResolver
         var displayName = "미디어_${System.currentTimeMillis() % 10000}"
         contentResolver.query(uri, null, null, null, null)?.use { cursor ->

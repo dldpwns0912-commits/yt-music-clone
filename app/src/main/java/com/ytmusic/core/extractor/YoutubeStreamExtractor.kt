@@ -2,6 +2,7 @@ package com.ytmusic.core.extractor
 
 import com.ytmusic.core.extractor.model.AudioQuality
 import com.ytmusic.core.extractor.model.ExtractionResult
+import com.ytmusic.core.extractor.model.PlaylistInfo
 import com.ytmusic.core.extractor.model.TrackMetadata
 
 interface YoutubeStreamExtractor {

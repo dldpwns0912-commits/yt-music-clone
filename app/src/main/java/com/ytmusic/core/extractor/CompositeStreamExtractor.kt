@@ -7,6 +7,7 @@ import com.ytmusic.core.extractor.model.AudioQuality
 import com.ytmusic.core.extractor.model.ExtractionResult
 import com.ytmusic.core.extractor.model.ExtractorException
 import com.ytmusic.core.extractor.model.ExtractorSource
+import com.ytmusic.core.extractor.model.PlaylistInfo
 import com.ytmusic.core.extractor.model.TrackMetadata
 import com.ytmusic.core.extractor.ytdlp.YtDlpExtractor
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +74,7 @@ class CompositeStreamExtractor @Inject constructor(
         return innerTubeClient.search(query)
     }
 
-    override suspend fun fetchPlaylist(playlistId: String): com.ytmusic.core.extractor.model.PlaylistInfo? {
+    override suspend fun fetchPlaylist(playlistId: String): PlaylistInfo? {
         return innerTubeClient.fetchPlaylist(playlistId)
     }
 }

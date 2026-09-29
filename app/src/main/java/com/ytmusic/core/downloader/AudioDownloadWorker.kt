@@ -85,7 +85,7 @@ class AudioDownloadWorker @AssistedInject constructor(
             // 1. Try yt-dlp fast native download if available
             if (ytDlpExtractor.isSupported()) {
                 val success = ytDlpExtractor.downloadMedia(trackId, isVideo, targetFile) { progressPercent ->
-                    setProgress(workDataOf(KEY_PROGRESS to progressPercent))
+                    setProgressAsync(workDataOf(KEY_PROGRESS to progressPercent))
                     notificationManager.notify(
                         notificationId,
                         buildNotification(title, artist, progressPercent, false)

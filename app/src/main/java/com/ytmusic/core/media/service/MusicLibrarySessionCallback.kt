@@ -88,10 +88,6 @@ class MusicLibrarySessionCallback @Inject constructor(
         return MediaSession.ConnectionResult.accept(sessionCommands, playerCommands)
     }
 
-    private var lastHeadsetHookClickTime = 0L
-    private var headsetHookClickCount = 0
-    private var headsetHookJob: Job? = null
-
     override fun onMediaButtonEvent(
         session: MediaSession,
         controllerInfo: MediaSession.ControllerInfo,
@@ -106,7 +102,8 @@ class MusicLibrarySessionCallback @Inject constructor(
 
         if (keyEvent.action == KeyEvent.ACTION_DOWN) {
             when (keyEvent.keyCode) {
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_HEADSETHOOK -> {
                     playerManager.togglePlayPause()
                     return true
                 }
@@ -114,41 +111,28 @@ class MusicLibrarySessionCallback @Inject constructor(
                     playerManager.play()
                     return true
                 }
-                KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP -> {
+                KeyEvent.KEYCODE_MEDIA_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_STOP -> {
                     playerManager.pause()
                     return true
                 }
-                KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_STEP_FORWARD, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                KeyEvent.KEYCODE_MEDIA_NEXT,
+                KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                     playerManager.skipToNext()
                     return true
                 }
-                KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
                     playerManager.skipToPrevious()
                     return true
                 }
-                KeyEvent.KEYCODE_HEADSETHOOK -> {
-                    val now = System.currentTimeMillis()
-                    if (now - lastHeadsetHookClickTime < 450L) {
-                        headsetHookClickCount++
-                    } else {
-                        headsetHookClickCount = 1
-                    }
-                    lastHeadsetHookClickTime = now
-
-                    headsetHookJob?.cancel()
-                    headsetHookJob = scope.launch(Dispatchers.Main) {
-                        delay(450L)
-                        when (headsetHookClickCount) {
-                            1 -> playerManager.togglePlayPause()
-                            2 -> playerManager.skipToNext()
-                            else -> playerManager.skipToPrevious()
-                        }
-                        headsetHookClickCount = 0
-                    }
-                    return true
-                }
             }
+        } else if (keyEvent.action == KeyEvent.ACTION_UP) {
+            return true
         }
+
         return super.onMediaButtonEvent(session, controllerInfo, intent)
     }
 

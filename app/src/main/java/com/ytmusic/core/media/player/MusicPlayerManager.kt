@@ -287,9 +287,13 @@ class MusicPlayerManager @Inject constructor(
             crossfadeManager.crossfadeToNext(exoPlayer) {
                 playTrackAtIndex(nextIdx)
             }
-        } else if (_playbackState.value.repeatMode == Player.REPEAT_MODE_ALL && queue.isNotEmpty()) {
-            crossfadeManager.crossfadeToNext(exoPlayer) {
-                playTrackAtIndex(0)
+        } else if (queue.isNotEmpty()) {
+            if (_playbackState.value.repeatMode == Player.REPEAT_MODE_ALL || queue.size == 1) {
+                crossfadeManager.crossfadeToNext(exoPlayer) {
+                    playTrackAtIndex(0)
+                }
+            } else {
+                seekTo(0L)
             }
         }
     }

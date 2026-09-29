@@ -61,7 +61,8 @@ class MusicPlaybackService : MediaLibraryService() {
         }
         val sessionActivityPendingIntent = PendingIntent.getActivity(this, 0, sessionActivityIntent, flags)
 
-        mediaLibrarySession = MediaLibrarySession.Builder(this, playerManager.exoPlayer, callback)
+        val forwardingPlayer = com.ytmusic.core.media.player.QueueForwardingPlayer(playerManager.exoPlayer, playerManager)
+        mediaLibrarySession = MediaLibrarySession.Builder(this, forwardingPlayer, callback)
             .setSessionActivity(sessionActivityPendingIntent)
             .build()
 

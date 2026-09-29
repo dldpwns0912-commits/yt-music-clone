@@ -35,9 +35,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Receive shared links (e.g. from YouTube app) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
-        <!-- Media3 MediaLibraryService for Playback & Android Auto -->
+        <!-- Media3 MediaLibraryService for Playback, Media Buttons & Samsung Galaxy Media Output -->
         <service
             android:name=".core.media.service.MusicPlaybackService"
             android:exported="true"
@@ -46,6 +52,7 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
 

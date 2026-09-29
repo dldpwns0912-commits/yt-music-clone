@@ -37,7 +37,8 @@ class AudioDownloadWorker @AssistedInject constructor(
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
     private val okHttpClient: OkHttpClient,
-    private val storageManager: StorageManager
+    private val storageManager: StorageManager,
+    private val ytDlpExtractor: com.ytmusic.core.extractor.ytdlp.YtDlpExtractor
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -48,6 +49,7 @@ class AudioDownloadWorker @AssistedInject constructor(
         const val KEY_DURATION = "duration"
         const val KEY_THUMBNAIL = "thumbnail"
         const val KEY_QUALITY = "quality"
+        const val KEY_DOWNLOAD_TYPE = "download_type"
         const val KEY_PROGRESS = "progress"
         const val KEY_ERROR = "error"
 
@@ -66,6 +68,8 @@ class AudioDownloadWorker @AssistedInject constructor(
         val durationMs = inputData.getLong(KEY_DURATION, 0L)
         val thumbnailUrl = inputData.getString(KEY_THUMBNAIL) ?: ""
         val qualityPref = inputData.getString(KEY_QUALITY) ?: "HIGH"
+        val downloadType = inputData.getString(KEY_DOWNLOAD_TYPE) ?: "AUDIO"
+        val isVideo = downloadType.equals("VIDEO", ignoreCase = true)
 
         createNotificationChannel()
         val notificationId = NOTIFICATION_ID_BASE + (trackId.hashCode() and 0x7FFFFFFF % 10000)
@@ -75,26 +79,49 @@ class AudioDownloadWorker @AssistedInject constructor(
         } catch (_: Exception) {}
 
         try {
-            // 1. Resolve AudioQuality
+            val extension = if (isVideo) "mp4" else "m4a"
+            val targetFile = File(storageManager.downloadsDir, "$trackId.$extension")
+
+            // 1. Try yt-dlp fast native download if available
+            if (ytDlpExtractor.isSupported()) {
+                val success = ytDlpExtractor.downloadMedia(trackId, isVideo, targetFile) { progressPercent ->
+                    setProgress(workDataOf(KEY_PROGRESS to progressPercent))
+                    notificationManager.notify(
+                        notificationId,
+                        buildNotification(title, artist, progressPercent, false)
+                    )
+                }
+                if (success && targetFile.exists() && targetFile.length() > 0) {
+                    val mime = if (isVideo) "video/mp4" else "audio/m4a"
+                    saveCompletedTrack(trackId, title, artist, album, durationMs, thumbnailUrl, targetFile, mime, qualityPref)
+                    copyToPublicDownloadDir(targetFile, title, extension)
+                    notificationManager.notify(
+                        notificationId,
+                        buildNotification(title, artist, 100, true)
+                    )
+                    return@withContext Result.success(workDataOf(KEY_TRACK_ID to trackId))
+                }
+            }
+
+            // 2. StreamExtractor + OkHttp fallback
             val audioQuality = when (qualityPref.uppercase()) {
                 "320K", "HIGH" -> AudioQuality.HIGH
                 "128K", "LOW" -> AudioQuality.LOW
                 else -> AudioQuality.MEDIUM
             }
 
-            // 2. Extract playable stream
             val extractionResult = streamExtractor.extractStream(trackId)
             val stream = extractionResult.selectDownloadStream(audioQuality)
                 ?: extractionResult.selectBestStream(audioQuality)
-                ?: return@withContext Result.failure(workDataOf(KEY_ERROR to "No audio stream available"))
+                ?: return@withContext Result.failure(workDataOf(KEY_ERROR to "No media stream available"))
 
-            val extension = when {
+            val actualExt = if (isVideo) "mp4" else when {
                 stream.mimeType.contains("mp4", ignoreCase = true) -> "m4a"
                 stream.mimeType.contains("webm", ignoreCase = true) || stream.codec == AudioCodec.OPUS -> "opus"
                 else -> "m4a"
             }
-            val targetFile = File(storageManager.downloadsDir, "$trackId.$extension")
-            val tempFile = File(storageManager.downloadsDir, "$trackId.$extension.part")
+            val actualTargetFile = File(storageManager.downloadsDir, "$trackId.$actualExt")
+            val tempFile = File(storageManager.downloadsDir, "$trackId.$actualExt.part")
 
             // 3. Resume support
             val existingBytes = if (tempFile.exists()) tempFile.length() else 0L
@@ -165,38 +192,16 @@ class AudioDownloadWorker @AssistedInject constructor(
             }
 
             // Move part file to final file
-            if (targetFile.exists()) targetFile.delete()
-            if (!tempFile.renameTo(targetFile)) {
-                tempFile.copyTo(targetFile, overwrite = true)
+            if (actualTargetFile.exists()) actualTargetFile.delete()
+            if (!tempFile.renameTo(actualTargetFile)) {
+                tempFile.copyTo(actualTargetFile, overwrite = true)
                 tempFile.delete()
             }
 
-            // 4. Update Database
-            val trackEntity = TrackEntity(
-                id = trackId,
-                title = title,
-                artist = artist,
-                album = album,
-                durationMs = durationMs,
-                thumbnailUrl = thumbnailUrl,
-                localFilePath = targetFile.absolutePath,
-                isDownloaded = true,
-                downloadedAt = System.currentTimeMillis(),
-                audioQuality = qualityPref,
-                fileSize = targetFile.length(),
-                mimeType = stream.mimeType
-            )
-            trackDao.upsertTrack(trackEntity)
+            val finalMime = if (isVideo) "video/mp4" else stream.mimeType
+            saveCompletedTrack(trackId, title, artist, album, durationMs, thumbnailUrl, actualTargetFile, finalMime, qualityPref)
+            copyToPublicDownloadDir(actualTargetFile, title, actualExt)
 
-            playlistDao.insertCrossRef(
-                PlaylistTrackCrossRef(
-                    playlistId = "downloads",
-                    trackId = trackId,
-                    position = 0
-                )
-            )
-
-            // 5. Complete notification
             notificationManager.notify(
                 notificationId,
                 buildNotification(title, artist, 100, true)
@@ -210,6 +215,53 @@ class AudioDownloadWorker @AssistedInject constructor(
                 Result.failure(workDataOf(KEY_ERROR to (e.message ?: "Unknown download error")))
             }
         }
+    }
+
+    private suspend fun saveCompletedTrack(
+        trackId: String,
+        title: String,
+        artist: String,
+        album: String?,
+        durationMs: Long,
+        thumbnailUrl: String,
+        targetFile: File,
+        mimeType: String,
+        qualityPref: String
+    ) {
+        val trackEntity = TrackEntity(
+            id = trackId,
+            title = title,
+            artist = artist,
+            album = album ?: if (mimeType.startsWith("video")) "다운로드 영상" else "다운로드 음원",
+            durationMs = durationMs,
+            thumbnailUrl = thumbnailUrl,
+            localFilePath = targetFile.absolutePath,
+            isDownloaded = true,
+            downloadedAt = System.currentTimeMillis(),
+            audioQuality = qualityPref,
+            fileSize = targetFile.length(),
+            mimeType = mimeType
+        )
+        trackDao.upsertTrack(trackEntity)
+
+        playlistDao.insertCrossRef(
+            PlaylistTrackCrossRef(
+                playlistId = "downloads",
+                trackId = trackId,
+                position = 0
+            )
+        )
+    }
+
+    private fun copyToPublicDownloadDir(sourceFile: File, title: String, ext: String) {
+        try {
+            val publicDir = File("/storage/emulated/0/Download")
+            if (publicDir.exists() && publicDir.canWrite()) {
+                val safeTitle = title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val destFile = File(publicDir, "$safeTitle.$ext")
+                sourceFile.copyTo(destFile, overwrite = true)
+            }
+        } catch (_: Exception) {}
     }
 
     private fun createForegroundInfo(

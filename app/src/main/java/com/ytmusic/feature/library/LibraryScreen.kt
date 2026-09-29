@@ -67,10 +67,20 @@ fun LibraryScreen(
     val context = LocalContext.current
     var trackToDelete by remember { mutableStateOf<TrackEntity?>(null) }
 
-    val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+    val multiFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            libraryViewModel.importLocalFiles(uris)
+        }
+    }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        uri?.let { libraryViewModel.importLocalFile(it) }
+        uri?.let {
+            libraryViewModel.importFolder(it)
+        }
     }
 
     syncMessage?.let { msg ->
@@ -119,21 +129,6 @@ fun LibraryScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Add Local Video File Button
-            IconButton(
-                onClick = { filePicker.launch(arrayOf("video/*", "audio/*")) },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "내 기기 영상 추가",
-                    tint = Color(0xFF06B6D4),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(4.dp))
-
             // Daily Sync Button
             IconButton(
                 onClick = { libraryViewModel.triggerDailySync() },
@@ -144,6 +139,74 @@ fun LibraryScreen(
                     contentDescription = "일일 동기화 실행",
                     tint = Color(0xFFA1A1AA),
                     modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // Quick Import Action Bar (Convenient Multi-file & Folder upload)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 1. Multi-file Select Button
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1F1F23))
+                    .clickable {
+                        multiFilePicker.launch(arrayOf("audio/*", "video/*", "application/octet-stream"))
+                    }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "＋ 파일 다중 추가",
+                    color = Color(0xFF06B6D4),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // 2. Folder Select Button
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1F1F23))
+                    .clickable {
+                        folderPicker.launch(null)
+                    }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "📁 폴더 전체 추가",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // 3. Scan Downloads Folder
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1F1F23))
+                    .clickable {
+                        libraryViewModel.scanDeviceDownloads()
+                    }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "⚡ 다운로드 스캔",
+                    color = Color(0xFFFBBF24),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }

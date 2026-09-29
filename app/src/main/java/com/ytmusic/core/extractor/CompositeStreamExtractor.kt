@@ -72,4 +72,8 @@ class CompositeStreamExtractor @Inject constructor(
     override suspend fun searchVideos(query: String): List<TrackMetadata> {
         return innerTubeClient.search(query)
     }
+
+    override suspend fun fetchPlaylist(playlistId: String): com.ytmusic.core.extractor.model.PlaylistInfo? {
+        return innerTubeClient.fetchPlaylist(playlistId)
+    }
 }

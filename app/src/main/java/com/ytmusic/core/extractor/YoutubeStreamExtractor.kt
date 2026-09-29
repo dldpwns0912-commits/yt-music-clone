@@ -13,4 +13,6 @@ interface YoutubeStreamExtractor {
     ): String
 
     suspend fun searchVideos(query: String): List<TrackMetadata>
+
+    suspend fun fetchPlaylist(playlistId: String): PlaylistInfo?
 }

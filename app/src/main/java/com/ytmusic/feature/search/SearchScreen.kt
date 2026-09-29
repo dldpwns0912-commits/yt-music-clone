@@ -17,21 +17,27 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import android.widget.Toast
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,7 +68,124 @@ fun SearchScreen(
     val searchHistory by searchViewModel.searchHistory.collectAsState()
     val searchResults by searchViewModel.searchResults.collectAsState()
     val isSearching by searchViewModel.isSearching.collectAsState()
+    val activePlaylist by searchViewModel.activePlaylist.collectAsState()
+    val selectedTrackForDownload by searchViewModel.selectedTrackForDownload.collectAsState()
+    val downloadToast by searchViewModel.downloadToast.collectAsState()
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+
+    downloadToast?.let { msg ->
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        searchViewModel.clearDownloadToast()
+    }
+
+    // Modal Dialog: Choose between Audio download, Video download, or immediate Play
+    selectedTrackForDownload?.let { track ->
+        AlertDialog(
+            onDismissRequest = { searchViewModel.selectTrackForDownload(null) },
+            containerColor = Color(0xFF18181B),
+            title = {
+                Text(
+                    text = "다운로드 형식 선택",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = track.title,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = track.artist,
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Option 1: Audio Download
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF27272A))
+                            .clickable {
+                                searchViewModel.downloadTrack(track, isVideo = false)
+                                searchViewModel.selectTrackForDownload(null)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎵  음원 다운로드 (오디오 추출)",
+                            color = Color(0xFF06B6D4),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Option 2: Video Download
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF27272A))
+                            .clickable {
+                                searchViewModel.downloadTrack(track, isVideo = true)
+                                searchViewModel.selectTrackForDownload(null)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎬  영상 다운로드 (비디오 MP4)",
+                            color = Color(0xFFF43F5E),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Option 3: Immediate Play
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF27272A))
+                            .clickable {
+                                playbackViewModel.playTrack(track, listOf(track))
+                                searchViewModel.selectTrackForDownload(null)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "▶  지금 바로 재생",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { searchViewModel.selectTrackForDownload(null) }) {
+                    Text(text = "닫기", color = Color(0xFFA1A1AA))
+                }
+            }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -76,7 +199,7 @@ fun SearchScreen(
             value = query,
             onValueChange = { searchViewModel.onQueryChanged(it) },
             placeholder = {
-                Text(text = "검색어 또는 유튜브 링크 입력", color = Color(0xFF71717A))
+                Text(text = "검색어 또는 유튜브 링크/플레이리스트 입력", color = Color(0xFF71717A))
             },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = "검색", tint = Color(0xFF06B6D4))
@@ -195,9 +318,9 @@ fun SearchScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "검색어를 입력하여 영상을 찾아보세요",
+                                    text = "유튜브 영상/플레이리스트 링크를 입력하여 다운로드하세요",
                                     color = Color(0xFFA1A1AA),
-                                    fontSize = 15.sp
+                                    fontSize = 14.sp
                                 )
                             }
                         }
@@ -205,7 +328,7 @@ fun SearchScreen(
                 }
             }
         } else {
-            // Live Search Results
+            // Live Search / Playlist Results
             if (isSearching) {
                 Box(
                     modifier = Modifier
@@ -233,9 +356,98 @@ fun SearchScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
+                    // Active Playlist Header Banner
+                    activePlaylist?.let { pl ->
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF1E1E24))
+                                    .border(1.dp, Color(0xFF2E2E38), RoundedCornerShape(12.dp))
+                                    .padding(14.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(54.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF27272A))
+                                    ) {
+                                        AsyncImage(
+                                            model = pl.thumbnailUrl,
+                                            contentDescription = pl.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = pl.title,
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Text(
+                                            text = "${pl.channelName} • 총 ${pl.trackCount}곡",
+                                            color = Color(0xFF06B6D4),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF06B6D4))
+                                            .clickable { searchViewModel.downloadPlaylist(pl, isVideo = false) }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "🎵 전체 음원 다운",
+                                            color = Color.Black,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFF43F5E))
+                                            .clickable { searchViewModel.downloadPlaylist(pl, isVideo = true) }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "🎬 전체 영상 다운",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     item {
                         Text(
-                            text = "검색 결과 (${searchResults.size})",
+                            text = if (activePlaylist != null) "재생목록 곡 목록 (${searchResults.size})" else "검색 결과 (${searchResults.size})",
                             color = Color(0xFFA1A1AA),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
@@ -248,6 +460,9 @@ fun SearchScreen(
                             track = track,
                             onClick = {
                                 playbackViewModel.playTrack(track, searchResults)
+                            },
+                            onDownloadClick = {
+                                searchViewModel.selectTrackForDownload(track)
                             }
                         )
                     }
@@ -260,7 +475,8 @@ fun SearchScreen(
 @Composable
 private fun SearchResultItem(
     track: TrackMetadata,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDownloadClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -320,14 +536,33 @@ private fun SearchResultItem(
             )
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "재생",
-            tint = Color(0xFF06B6D4),
-            modifier = Modifier.size(24.dp)
-        )
+        // Download Action Button
+        IconButton(
+            onClick = onDownloadClick,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.FileDownload,
+                contentDescription = "다운로드 옵션",
+                tint = Color(0xFF06B6D4),
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        // Play Action Button
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = "재생",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 

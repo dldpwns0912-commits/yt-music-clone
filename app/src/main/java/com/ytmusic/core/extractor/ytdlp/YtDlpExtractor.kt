@@ -14,8 +14,10 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -186,5 +188,64 @@ class YtDlpExtractor @Inject constructor(
             audioStreams = audioStreams,
             source = ExtractorSource.YT_DLP
         )
+    }
+
+    suspend fun downloadMedia(
+        videoId: String,
+        isVideo: Boolean,
+        targetFile: File,
+        onProgress: (Int) -> Unit
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!isSupported()) return@withContext false
+
+        val binary = updateManager.getBinaryFile()
+        val videoUrl = "https://www.youtube.com/watch?v=$videoId"
+        val formatArg = if (isVideo) {
+            "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        } else {
+            "bestaudio/best"
+        }
+
+        val command = mutableListOf(
+            binary.absolutePath,
+            "--no-playlist",
+            "--no-warnings",
+            "--newline",
+            "-f", formatArg,
+            "-o", targetFile.absolutePath
+        )
+        if (!isVideo) {
+            command.add("-x")
+            command.add("--audio-format")
+            command.add("m4a")
+        }
+        command.add(videoUrl)
+
+        try {
+            val process = ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start()
+
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val progressPattern = Pattern.compile("\\[download\\]\\s+([0-9]+(?:\\.[0-9]+)?)%")
+            var line: String?
+            while (reader.readLine().also { line = it } != null) {
+                line?.let { l ->
+                    val matcher = progressPattern.matcher(l)
+                    if (matcher.find()) {
+                        val pct = matcher.group(1)?.toFloatOrNull()?.toInt() ?: 0
+                        onProgress(pct.coerceIn(0, 100))
+                    }
+                }
+            }
+            val finished = process.waitFor(180, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                return@withContext false
+            }
+            process.exitValue() == 0 && targetFile.exists() && targetFile.length() > 0
+        } catch (_: Exception) {
+            false
+        }
     }
 }

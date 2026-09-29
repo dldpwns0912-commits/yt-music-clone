@@ -25,6 +25,11 @@ sealed interface DownloadState {
     data class Failed(val error: String) : DownloadState
 }
 
+enum class DownloadType {
+    AUDIO,
+    VIDEO
+}
+
 @Singleton
 class AudioDownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -33,7 +38,11 @@ class AudioDownloadManager @Inject constructor(
 ) {
     private val workManager by lazy { WorkManager.getInstance(context) }
 
-    fun enqueueDownload(track: TrackMetadata, quality: String = "HIGH"): Boolean {
+    fun enqueueDownload(
+        track: TrackMetadata,
+        quality: String = "HIGH",
+        downloadType: DownloadType = DownloadType.AUDIO
+    ): Boolean {
         return try {
             val inputData = Data.Builder()
                 .putString(AudioDownloadWorker.KEY_TRACK_ID, track.id)
@@ -43,6 +52,7 @@ class AudioDownloadManager @Inject constructor(
                 .putLong(AudioDownloadWorker.KEY_DURATION, track.durationMs)
                 .putString(AudioDownloadWorker.KEY_THUMBNAIL, track.thumbnailUrl)
                 .putString(AudioDownloadWorker.KEY_QUALITY, quality)
+                .putString(AudioDownloadWorker.KEY_DOWNLOAD_TYPE, downloadType.name)
                 .build()
 
             val constraints = Constraints.Builder()
@@ -65,6 +75,20 @@ class AudioDownloadManager @Inject constructor(
             android.util.Log.e("AudioDownloadManager", "Failed to enqueue download: ${e.message}", e)
             false
         }
+    }
+
+    fun enqueueBatchDownload(
+        tracks: List<TrackMetadata>,
+        quality: String = "HIGH",
+        downloadType: DownloadType = DownloadType.AUDIO
+    ): Int {
+        var count = 0
+        for (track in tracks) {
+            if (enqueueDownload(track, quality, downloadType)) {
+                count++
+            }
+        }
+        return count
     }
 
     fun cancelDownload(trackId: String) {

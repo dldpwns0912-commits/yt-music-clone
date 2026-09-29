@@ -1,7 +1,10 @@
 package com.ytmusic.core.media.service
 
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -22,8 +25,11 @@ import com.ytmusic.core.extractor.model.TrackMetadata
 import com.ytmusic.core.media.player.MusicPlayerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -80,6 +86,70 @@ class MusicLibrarySessionCallback @Inject constructor(
             .build()
 
         return MediaSession.ConnectionResult.accept(sessionCommands, playerCommands)
+    }
+
+    private var lastHeadsetHookClickTime = 0L
+    private var headsetHookClickCount = 0
+    private var headsetHookJob: Job? = null
+
+    override fun onMediaButtonEvent(
+        session: MediaSession,
+        controllerInfo: MediaSession.ControllerInfo,
+        intent: Intent
+    ): Boolean {
+        val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+        } ?: return super.onMediaButtonEvent(session, controllerInfo, intent)
+
+        if (keyEvent.action == KeyEvent.ACTION_DOWN) {
+            when (keyEvent.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    playerManager.togglePlayPause()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    playerManager.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP -> {
+                    playerManager.pause()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_STEP_FORWARD, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    playerManager.skipToNext()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    playerManager.skipToPrevious()
+                    return true
+                }
+                KeyEvent.KEYCODE_HEADSETHOOK -> {
+                    val now = System.currentTimeMillis()
+                    if (now - lastHeadsetHookClickTime < 450L) {
+                        headsetHookClickCount++
+                    } else {
+                        headsetHookClickCount = 1
+                    }
+                    lastHeadsetHookClickTime = now
+
+                    headsetHookJob?.cancel()
+                    headsetHookJob = scope.launch(Dispatchers.Main) {
+                        delay(450L)
+                        when (headsetHookClickCount) {
+                            1 -> playerManager.togglePlayPause()
+                            2 -> playerManager.skipToNext()
+                            else -> playerManager.skipToPrevious()
+                        }
+                        headsetHookClickCount = 0
+                    }
+                    return true
+                }
+            }
+        }
+        return super.onMediaButtonEvent(session, controllerInfo, intent)
     }
 
     override fun onGetLibraryRoot(

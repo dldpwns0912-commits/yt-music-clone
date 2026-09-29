@@ -31,10 +31,24 @@ class ExtractorUpdateManagerImpl @Inject constructor(
         return prefs.getString("current_version", "none") ?: "none"
     }
 
-    override fun getBinaryFile(): File = binaryFile
+    override fun getBinaryFile(): File {
+        if (binaryFile.exists() && binaryFile.length() > 0 && binaryFile.canExecute()) {
+            return binaryFile
+        }
+        val termuxBin = File("/data/data/com.termux/files/usr/bin/yt-dlp")
+        if (termuxBin.exists() && termuxBin.canExecute()) {
+            return termuxBin
+        }
+        val systemBin = File("/system/bin/yt-dlp")
+        if (systemBin.exists() && systemBin.canExecute()) {
+            return systemBin
+        }
+        return binaryFile
+    }
 
     override fun isBinaryAvailable(): Boolean {
-        return binaryFile.exists() && binaryFile.length() > 0 && binaryFile.canExecute()
+        val bin = getBinaryFile()
+        return bin.exists() && bin.length() > 0 && bin.canExecute()
     }
 
     override fun checkForUpdates(): Flow<UpdateStatus> = flow {

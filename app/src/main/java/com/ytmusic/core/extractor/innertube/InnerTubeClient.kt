@@ -5,6 +5,7 @@ import com.ytmusic.core.extractor.model.AudioStream
 import com.ytmusic.core.extractor.model.ExtractionResult
 import com.ytmusic.core.extractor.model.ExtractorException
 import com.ytmusic.core.extractor.model.ExtractorSource
+import com.ytmusic.core.extractor.model.PlaylistInfo
 import com.ytmusic.core.extractor.model.Thumbnail
 import com.ytmusic.core.extractor.model.TrackMetadata
 import kotlinx.coroutines.Dispatchers
@@ -241,6 +242,217 @@ class InnerTubeClient @Inject constructor(
             2 -> (parts[0] * 60 + parts[1]) * 1000L
             1 -> parts[0] * 1000L
             else -> 0L
+        }
+    }
+
+    suspend fun fetchPlaylist(playlistId: String): PlaylistInfo? = withContext(Dispatchers.IO) {
+        val cleanId = playlistId.trim()
+        val browseId = if (cleanId.startsWith("VL")) cleanId else "VL$cleanId"
+        val visitorData = getVisitorData()
+
+        val root = JSONObject().apply {
+            put("browseId", browseId)
+            val context = JSONObject().apply {
+                val client = JSONObject().apply {
+                    put("clientName", "WEB")
+                    put("clientVersion", "2.20240920.01.00")
+                    put("hl", "ko")
+                    put("gl", "KR")
+                    if (visitorData.isNotBlank()) {
+                        put("visitorData", visitorData)
+                    }
+                }
+                put("client", client)
+            }
+            put("context", context)
+        }
+
+        val req = Request.Builder()
+            .url("https://www.youtube.com/youtubei/v1/browse?prettyPrint=false")
+            .post(root.toString().toRequestBody(jsonMediaType))
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+            .header("Content-Type", "application/json")
+            .header("X-YouTube-Client-Name", "1")
+            .header("X-YouTube-Client-Version", "2.20240920.01.00")
+            .header("Origin", "https://www.youtube.com")
+            .header("X-Goog-Visitor-Id", visitorData)
+            .build()
+
+        try {
+            val res = okHttpClient.newCall(req).execute()
+            val body = res.body?.string() ?: ""
+            val parsed = parsePlaylistJson(cleanId, body)
+            if (parsed != null && parsed.tracks.isNotEmpty()) {
+                return@withContext parsed
+            }
+        } catch (_: Exception) {}
+
+        // Fallback: scrape playlist page
+        return@withContext fetchPlaylistHtmlFallback(cleanId)
+    }
+
+    private fun parsePlaylistJson(playlistId: String, jsonString: String): PlaylistInfo? {
+        return try {
+            val root = JSONObject(jsonString)
+            var title = root.optJSONObject("metadata")?.optJSONObject("playlistMetadataRenderer")?.optString("title") ?: ""
+            if (title.isBlank()) {
+                val header = root.optJSONObject("header")
+                val pageHeader = header?.optJSONObject("pageHeaderRenderer")
+                val pageTitle = pageHeader?.optJSONObject("pageTitle")?.optString("content")
+                val plHeader = header?.optJSONObject("playlistHeaderRenderer")
+                val plTitle = plHeader?.optJSONObject("title")?.optString("simpleText")
+                    ?: plHeader?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                title = pageTitle ?: plTitle ?: "재생목록 ($playlistId)"
+            }
+
+            var channelName = "YouTube"
+            val ownerRuns = root.optJSONObject("header")?.optJSONObject("playlistHeaderRenderer")
+                ?.optJSONObject("ownerText")?.optJSONArray("runs")
+            if (ownerRuns != null && ownerRuns.length() > 0) {
+                channelName = ownerRuns.optJSONObject(0)?.optString("text") ?: "YouTube"
+            }
+
+            val tracks = mutableListOf<TrackMetadata>()
+            val twoCol = root.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+            val tabs = twoCol?.optJSONArray("tabs")
+            if (tabs != null && tabs.length() > 0) {
+                val tab = tabs.optJSONObject(0)?.optJSONObject("tabRenderer")
+                val sectionList = tab?.optJSONObject("content")?.optJSONObject("sectionListRenderer")
+                val secContents = sectionList?.optJSONArray("contents")
+                if (secContents != null && secContents.length() > 0) {
+                    val itemSection = secContents.optJSONObject(0)?.optJSONObject("itemSectionRenderer")
+                    val items = itemSection?.optJSONArray("contents")
+                    if (items != null) {
+                        for (i in 0 until items.length()) {
+                            val item = items.optJSONObject(i) ?: continue
+
+                            // 1. Modern lockupViewModel
+                            val lockup = item.optJSONObject("lockupViewModel")
+                            if (lockup != null) {
+                                val videoId = lockup.optString("contentId", "")
+                                if (videoId.isNotEmpty()) {
+                                    val meta = lockup.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                                    val trackTitle = meta?.optJSONObject("title")?.optString("content", "영상") ?: "영상"
+                                    var trackArtist = channelName
+                                    val rows = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+                                    if (rows != null && rows.length() > 0) {
+                                        val parts = rows.optJSONObject(0)?.optJSONArray("metadataParts")
+                                        if (parts != null && parts.length() > 0) {
+                                            trackArtist = parts.optJSONObject(0)?.optJSONObject("text")?.optString("content", channelName) ?: channelName
+                                        }
+                                    }
+                                    val sources = lockup.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONObject("image")?.optJSONArray("sources")
+                                    val thumb = if (sources != null && sources.length() > 0) {
+                                        sources.optJSONObject(sources.length() - 1)?.optString("url") ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                                    } else "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+                                    tracks.add(
+                                        TrackMetadata(
+                                            id = videoId,
+                                            title = trackTitle,
+                                            artist = trackArtist,
+                                            thumbnailUrl = thumb,
+                                            durationMs = 0L
+                                        )
+                                    )
+                                }
+                            }
+
+                            // 2. Classic playlistVideoRenderer
+                            val plVideo = item.optJSONObject("playlistVideoRenderer")
+                            if (plVideo != null) {
+                                val videoId = plVideo.optString("videoId", "")
+                                if (videoId.isNotEmpty()) {
+                                    val trackTitle = plVideo.optJSONObject("title")?.optString("simpleText")
+                                        ?: plVideo.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                        ?: "영상"
+                                    val trackArtist = plVideo.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                        ?: channelName
+                                    val thumbs = plVideo.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                    val thumb = if (thumbs != null && thumbs.length() > 0) {
+                                        thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                                    } else "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                                    val lengthSeconds = plVideo.optString("lengthSeconds", "0").toLongOrNull() ?: 0L
+
+                                    tracks.add(
+                                        TrackMetadata(
+                                            id = videoId,
+                                            title = trackTitle,
+                                            artist = trackArtist,
+                                            thumbnailUrl = thumb,
+                                            durationMs = lengthSeconds * 1000L
+                                        )
+                                    )
+                                }
+                            }
+
+                            // 3. playlistVideoListRenderer container
+                            val plList = item.optJSONObject("playlistVideoListRenderer")?.optJSONArray("contents")
+                            if (plList != null) {
+                                for (k in 0 until plList.length()) {
+                                    val subVideo = plList.optJSONObject(k)?.optJSONObject("playlistVideoRenderer") ?: continue
+                                    val videoId = subVideo.optString("videoId", "")
+                                    if (videoId.isNotEmpty()) {
+                                        val trackTitle = subVideo.optJSONObject("title")?.optString("simpleText")
+                                            ?: subVideo.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                            ?: "영상"
+                                        val trackArtist = subVideo.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                                            ?: channelName
+                                        val thumbs = subVideo.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                        val thumb = if (thumbs != null && thumbs.length() > 0) {
+                                            thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                                        } else "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+                                        tracks.add(
+                                            TrackMetadata(
+                                                id = videoId,
+                                                title = trackTitle,
+                                                artist = trackArtist,
+                                                thumbnailUrl = thumb,
+                                                durationMs = 0L
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val thumbUrl = tracks.firstOrNull()?.thumbnailUrl ?: ""
+            PlaylistInfo(
+                id = playlistId,
+                title = title,
+                channelName = channelName,
+                trackCount = tracks.size,
+                tracks = tracks,
+                thumbnailUrl = thumbUrl
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun fetchPlaylistHtmlFallback(playlistId: String): PlaylistInfo? {
+        return try {
+            val req = Request.Builder()
+                .url("https://www.youtube.com/playlist?list=$playlistId&hl=ko")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .header("Accept-Language", "ko-KR,ko;q=0.9,en-US;q=0.8")
+                .build()
+
+            val res = okHttpClient.newCall(req).execute()
+            val html = res.body?.string() ?: return null
+
+            val pattern = Pattern.compile("var ytInitialData = (\\{.*?\\});</script>")
+            val matcher = pattern.matcher(html)
+            if (matcher.find()) {
+                val json = matcher.group(1) ?: return null
+                parsePlaylistJson(playlistId, json)
+            } else null
+        } catch (_: Exception) {
+            null
         }
     }
 
